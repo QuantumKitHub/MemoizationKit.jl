@@ -1,0 +1,22 @@
+name = "Cached"
+uuid = "1b238080-9255-4fe9-b224-89eb24efe93b"
+version = "0.1.0"
+authors = ["lkdvos <ldevos98@gmail.com>"]
+
+[deps]
+LRUCache = "8ac3fa9e-de4c-5943-b1dc-09c6b5f20637"
+Preferences = "21216c6a-2e73-6563-6e65-726566657250"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+
+[compat]
+LRUCache = "1.6"
+Preferences = "1.4"
+Printf = "1"
+Test = "1.11.0"
+julia = "1.10"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
