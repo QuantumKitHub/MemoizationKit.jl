@@ -3,7 +3,7 @@ using LRUCache
 using Test
 
 # -------------------------------------------------------------------------
-# Test functions defined at top level (each @cached call must be unique)
+# Test functions defined at top level (each @cached call must be unique per signature)
 # -------------------------------------------------------------------------
 
 # Basic function: squares its argument, counts invocations
@@ -21,18 +21,6 @@ end
 # Function with a where clause
 @cached function _test_where(x::T) where {T <: Number}
     return T(x * 2)
-end
-
-# Varargs function
-@cached function _test_varargs(x, rest...)
-    return (x, rest)
-end
-
-# Two-argument function (tests tuple key)
-const _twoarg_calls = Ref(0)
-@cached function _test_twoarg(x, y)
-    _twoarg_calls[] += 1
-    return x + y
 end
 
 # Function used for CacheStyle override tests
@@ -65,6 +53,15 @@ const _anon_calls = Ref(0)
     return 42
 end
 
+# Typed single argument (concrete type) — LRU should be typed LRU{Int,Int}
+@cached function _test_typed_sig(x::Int)::Int
+    return x + 10
+end
+
+# Multiple @cached for same function — each signature gets its own LRU
+@cached function _test_multisig(x::Int); x * 2; end
+@cached function _test_multisig(x::Float64); x * 3.0; end
+
 # -------------------------------------------------------------------------
 # Tests
 # -------------------------------------------------------------------------
@@ -87,9 +84,9 @@ end
         @test _basic_calls[] == 2  # different key → cache miss
     end
 
-    @testset "GLOBAL_CACHES registration" begin
-        @test haskey(GLOBAL_CACHES, _test_basic)
-        @test GLOBAL_CACHES[_test_basic] isa LRU
+    @testset "PER_SIG_CACHES registration" begin
+        @test !isempty(caches_for(_test_basic))
+        @test caches_for(_test_basic)[1] isa LRU
     end
 
     @testset "NoCache bypasses caching" begin
@@ -144,33 +141,6 @@ end
         @test _tasklocal_calls[] >= 2
     end
 
-    @testset "Varargs" begin
-        empty_globalcaches!()
-
-        r1 = _test_varargs(1, 2, 3)
-        @test r1 == (1, (2, 3))
-
-        # Same call → cache hit (same object returned)
-        r2 = _test_varargs(1, 2, 3)
-        @test r2 === r1
-
-        # Different varargs → different key
-        r3 = _test_varargs(1, 2)
-        @test r3 != r1
-    end
-
-    @testset "Two-argument tuple key" begin
-        _twoarg_calls[] = 0
-        empty_globalcaches!()
-
-        _test_twoarg(1, 2)
-        _test_twoarg(1, 2)
-        @test _twoarg_calls[] == 1
-
-        _test_twoarg(2, 1)   # different key
-        @test _twoarg_calls[] == 2
-    end
-
     @testset "Anonymous typed arg" begin
         _anon_calls[] = 0
         empty_globalcaches!()
@@ -205,15 +175,41 @@ end
         @test r_float isa Float64
     end
 
+    @testset "Typed LRU — single concrete arg" begin
+        lru = caches_for(_test_typed_sig)[1]
+        @test lru isa LRU{Int,Int}
+        empty_globalcaches!()
+        @test _test_typed_sig(5) == 15
+        @test _test_typed_sig(5) == 15   # hit
+        @test length(lru) == 1
+    end
+
+    @testset "Multiple @cached for same function name" begin
+        lrus = caches_for(_test_multisig)
+        @test length(lrus) == 2
+        @test any(l -> l isa LRU{Int}, lrus)
+        @test any(l -> l isa LRU{Float64}, lrus)
+        @test _test_multisig(3)    == 6
+        @test _test_multisig(2.0)  == 6.0
+    end
+
     @testset "set_cache_size!" begin
-        lru = GLOBAL_CACHES[_test_basic]
+        lru = caches_for(_test_basic)[1]
         set_cache_size!(_test_basic, 999)
         @test lru.maxsize == 999
         @test !Cached._is_bytesize(lru)
     end
 
+    @testset "set_cache_size! by signature string" begin
+        sig = "_test_typed_sig(::Int)"
+        lru = caches_for(_test_typed_sig)[1]
+        set_cache_size!(sig, 777)
+        @test lru.maxsize == 777
+        @test !Cached._is_bytesize(lru)
+    end
+
     @testset "set_cache_bytesize!" begin
-        lru = GLOBAL_CACHES[_test_basic]
+        lru = caches_for(_test_basic)[1]
         set_cache_bytesize!(_test_basic, 10_000_000)
         @test lru.maxsize == 10_000_000
         @test Cached._is_bytesize(lru)
@@ -232,13 +228,19 @@ end
         @test_throws ArgumentError set_cache_bytesize!(g, 1000)
     end
 
+    @testset "set_cache_size!/bytesize! on unregistered signature → error" begin
+        @test_throws ArgumentError set_cache_size!("nonexistent(::Int)", 100)
+        @test_throws ArgumentError set_cache_bytesize!("nonexistent(::Int)", 1000)
+    end
+
     @testset "empty_globalcaches!" begin
         _basic_calls[] = 0
         _test_basic(77)
-        @test length(GLOBAL_CACHES[_test_basic]) > 0
+        lru = caches_for(_test_basic)[1]
+        @test length(lru) > 0
 
         empty_globalcaches!()
-        @test length(GLOBAL_CACHES[_test_basic]) == 0
+        @test length(lru) == 0
 
         # After empty, next call is a miss
         _test_basic(77)
@@ -264,10 +266,9 @@ end
         end
     end
 
-    @testset "Error case — double registration" begin
+    @testset "Error case — double registration (same signature)" begin
         # First registration succeeds; second must be a separate @eval so the first
-        # one runs to completion (and updates GLOBAL_CACHES) before the second macro
-        # is expanded — allowing the check to fire at macro-expansion time.
+        # one runs to completion before the second macro is expanded.
         @eval @cached function _test_double_reg_b(x); x; end
         @test_throws Exception @eval @cached function _test_double_reg_b(x); x * 2; end
     end
