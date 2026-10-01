@@ -147,10 +147,10 @@ end
     @test ClashA.f(1) == (:A, 1) && ClashB.f(1) == (:B, 1) # cache hits stay separate
     @test length(cache_info(ClashA.f)) == length(cache_info(ClashB.f)) == 1
     @test only(caches(ClashA.f)) !== only(caches(ClashB.f))
-    # printing qualifies the function by its module unless shown from inside it
-    shown = sprint(show, cache_info(ClashA.f))
-    @test occursin("ClashA.f =>", shown)
-    @test occursin("[f =>", sprint(show, cache_info(ClashA.f); context = :module => ClashA))
+    # printing qualifies the function by its module (from inside the module, Julia >= 1.11
+    # prints it unqualified; that is Base's function printing, not tested here)
+    @test occursin("ClashA.f =>", sprint(show, cache_info(ClashA.f)))
+    @test occursin("ClashB.f =>", sprint(show, cache_info(ClashB.f)))
 
     # methods of one function cached from different modules share its caches by key type
     @test Shared.fusion(SectorsA.IrrepA()) === :A
