@@ -5,6 +5,11 @@ export CacheStyle, NoCache, GlobalCache, GlobalLRUCache, TaskLocalCache
 export LRU, ClockCache
 export cache_info, empty_caches!, set_cache_size!, set_max_subcaches!, set_cache_preferences!
 
+# documented API that is used qualified, e.g. by overloading `Cached.cachesize`
+@static if VERSION >= v"1.11.0-DEV.469"
+    eval(Meta.parse("public AbstractCache, cache_stats, cachesize, implementation"))
+end
+
 using Base: @lock
 using ExprTools: ExprTools
 using Preferences: @load_preference, load_preference, has_preference, set_preferences!, delete_preferences!
