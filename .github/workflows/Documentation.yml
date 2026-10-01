@@ -8,6 +8,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Documenter deploys to gh-pages with GITHUB_TOKEN, which is read-only by default.
+permissions:
+  contents: write
+  statuses: write
+
 jobs:
   Documentation:
     runs-on: ubuntu-latest

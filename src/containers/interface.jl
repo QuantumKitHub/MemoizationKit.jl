@@ -5,7 +5,7 @@ Supertype of the size-bounded, thread-safe cache containers.
 
 Every cache has a `maxsize` limit in the same units as its size measure: entry count by default,
 or bytes (any unit) when constructed with a `by` function that measures values.
-Lookups through [`get!`](@ref) never hold the lock while computing a missing value, so cached
+Lookups through `get!` never hold the lock while computing a missing value, so cached
 functions may recurse into the same cache, and an exception leaves the cache unchanged.
 
 Subtypes provide the fields `index::Dict{K,Int}`, `keys`, `vals`, `sizes`, `currentsize`,
