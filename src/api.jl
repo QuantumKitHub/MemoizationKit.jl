@@ -44,3 +44,19 @@ function set_cache_size!(f, maxsize::Integer; by = nothing)
     end
     return nothing
 end
+
+"""
+    cache_dashboard(; interval = 1.0, filter = "")
+
+Open an interactive terminal dashboard of the global caches: browse them, watch their hit
+rates live, and empty or resize them. The statistics are re-read every `interval` seconds,
+and only functions whose name contains `filter` are shown.
+
+The dashboard is a package extension: load [Tachikoma.jl](https://github.com/kahliburke/Tachikoma.jl)
+first, with `using Tachikoma`. See [Dashboard](@ref) for the keybindings.
+"""
+function cache_dashboard(; kwargs...)
+    ext = Base.get_extension(@__MODULE__, :CachedTachikomaExt)
+    ext === nothing && error("cache_dashboard requires Tachikoma.jl; run `using Tachikoma` first")
+    return Base.invokelatest(ext.dashboard; kwargs...)
+end
