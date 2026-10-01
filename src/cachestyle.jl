@@ -4,7 +4,7 @@
 Supertype of the caching strategies used by [`@cached`](@ref) functions.
 
 The strategy for a call `f(args...)` is chosen by `CacheStyle(f, args...)`, which defaults to
-`GlobalCache{ClockCache}()`. Specialize it to change the strategy per function or argument type:
+`GlobalCache{ClockCache}()` (the container is configurable, see the configuration docs). Specialize it to change the strategy per function or argument type:
 
 ```julia
 Cached.CacheStyle(::typeof(f), x::SmallKey) = NoCache()
@@ -52,4 +52,4 @@ shared, not bounded unless `C` is, and are not visible to [`cache_info`](@ref).
 """
 struct TaskLocalCache{C} <: CacheStyle end
 
-CacheStyle(f, args...) = GlobalCache{ClockCache}()
+CacheStyle(f, args...) = GlobalCache{DEFAULT_CONTAINER}()

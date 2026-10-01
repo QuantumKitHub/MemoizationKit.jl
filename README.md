@@ -29,3 +29,5 @@ Cached.CacheStyle(::typeof(fusion), a::Int, b::Int) = TaskLocalCache{LRU}()
 cache_info(fusion)        # hit/miss statistics
 set_cache_size!(fusion, 1_000)
 ```
+
+Default sizes can be configured per package and per function through `LocalPreferences.toml`; see the [configuration docs](https://lkdvos.github.io/Cached.jl/dev/configuration/).

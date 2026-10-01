@@ -4,9 +4,6 @@
 # snapshot under `lock`. New caches are rare (once per function and key/value type), so the
 # copy is cheap compared to taking a lock on every call.
 
-const DEFAULT_MAXSIZE = 10_000
-const DEFAULT_MAXSUBCACHES = 100
-
 # Per-function limits and the function's caches, oldest first.
 mutable struct FunctionCaches
     maxsize::Int
@@ -14,7 +11,6 @@ mutable struct FunctionCaches
     maxsubcaches::Int
     const caches::Vector{AbstractCache}
 end
-FunctionCaches() = FunctionCaches(DEFAULT_MAXSIZE, nothing, DEFAULT_MAXSUBCACHES, AbstractCache[])
 
 mutable struct Registry
     @atomic table::IdDict{Any, Any} # _tablekey(f, C{K,V}) => C{K,V}; never mutated once published
@@ -37,7 +33,7 @@ end
     return @lock REGISTRY.lock begin
         c = get((@atomic :acquire REGISTRY.table), _tablekey(f, T), nothing)
         c === nothing || return c
-        fc = get!(FunctionCaches, REGISTRY.functions, f)
+        fc = _functioncaches!(f)
         c = T(; maxsize = fc.maxsize, by = fc.by)
         push!(fc.caches, c)
         length(fc.caches) > fc.maxsubcaches && popfirst!(fc.caches)
