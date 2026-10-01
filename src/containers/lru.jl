@@ -78,5 +78,13 @@ function Base.empty!(c::LRU)
     return c
 end
 
-# Iterates from most to least recently used. Not thread-safe.
-Base.iterate(c::LRU, i::Int = c.head) = i == 0 ? nothing : (c.keys[i] => c.vals[i], c.next[i])
+# Entries from most to least recently used. Call with the lock held.
+function _pairs(c::LRU{K, V}) where {K, V}
+    ps = Vector{Pair{K, V}}(undef, length(c.index))
+    i = c.head
+    for j in eachindex(ps)
+        ps[j] = c.keys[i] => c.vals[i]
+        i = c.next[i]
+    end
+    return ps
+end

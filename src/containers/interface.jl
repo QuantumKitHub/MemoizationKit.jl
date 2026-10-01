@@ -95,8 +95,18 @@ function Base.getindex(c::AbstractCache, key)
 end
 
 Base.haskey(c::AbstractCache, key) = @lock c.lock haskey(c.index, key)
-Base.length(c::AbstractCache) = length(c.index)
-Base.isempty(c::AbstractCache) = isempty(c.index)
+Base.length(c::AbstractCache) = @lock c.lock length(c.index)
+Base.isempty(c::AbstractCache) = @lock c.lock isempty(c.index)
+
+# Iteration walks a snapshot copied under the lock, so it is safe while other tasks use the
+# cache (holding the lock across `iterate` calls would deadlock on an early `break`).
+function Base.iterate(c::AbstractCache)
+    snapshot = @lock c.lock _pairs(c)
+    return iterate(c, (snapshot, 1))
+end
+function Base.iterate(::AbstractCache, (snapshot, i)::Tuple{Vector, Int})
+    return i > length(snapshot) ? nothing : (snapshot[i], (snapshot, i + 1))
+end
 
 function Base.setindex!(c::AbstractCache{K, V}, v, key) where {K, V}
     k = convert(K, key)::K
@@ -142,3 +152,14 @@ Return `(; hits, misses, length, currentsize, maxsize)` for `c`.
 cache_stats(c::AbstractCache) = @lock c.lock (;
     c.hits, c.misses, length = length(c.index), c.currentsize, c.maxsize,
 )
+
+# Compact form, also used as the header of the multi-line `show` inherited from `AbstractDict`.
+function Base.show(io::IO, c::AbstractCache)
+    s = cache_stats(c)
+    print(io, typeof(c), "(")
+    c.by === nothing ? print(io, s.length, "/", s.maxsize, " entries") :
+        print(io, s.length, " entries, size ", s.currentsize, "/", s.maxsize)
+    print(io, ", ", s.hits, " hits, ", s.misses, " misses)")
+    return nothing
+end
+Base.summary(io::IO, c::AbstractCache) = show(io, c)

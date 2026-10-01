@@ -116,3 +116,34 @@ end
     @test isempty(c)
     @test all(r -> r.value === nothing, w)
 end
+
+@testset "$C: iteration and display" for C in CACHETYPES
+    c = C{Int, Int}(; maxsize = 100)
+    for i in 1:10
+        c[i] = 2i
+    end
+    @test sort!(collect(c)) == [i => 2i for i in 1:10]
+    @test eltype(collect(c)) == Pair{Int, Int}
+    for (k, v) in c # an early break must not leave the cache locked
+        break
+    end
+    @test haskey(c, 1)
+    @test sprint(show, c) == "$(C{Int, Int})(10/100 entries, 0 hits, 0 misses)"
+    @test startswith(sprint(show, MIME"text/plain"(), c), "$(C{Int, Int})(10/100 entries")
+    b = C{Int, Vector{UInt8}}(; maxsize = 100, by = length)
+    b[1] = zeros(UInt8, 30)
+    @test sprint(show, b) == "$(C{Int, Vector{UInt8}})(1 entries, size 30/100, 0 hits, 0 misses)"
+
+    # iterating while other tasks write sees consistent snapshots
+    ok = Threads.Atomic{Bool}(true)
+    @sync begin
+        Threads.@spawn for i in 1:20_000
+            c[mod(i, 300)] = 2 * mod(i, 300)
+        end
+        Threads.@spawn for _ in 1:200
+            ps = collect(c)
+            (length(ps) <= 100 && all(((k, v),) -> v == 2k, ps)) || (ok[] = false)
+        end
+    end
+    @test ok[]
+end

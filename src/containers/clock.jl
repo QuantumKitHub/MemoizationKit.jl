@@ -80,11 +80,7 @@ function Base.empty!(c::ClockCache)
     return c
 end
 
-# Iterates in slot order. Not thread-safe.
-function Base.iterate(c::ClockCache, i::Int = 1)
-    while i <= length(c.keys)
-        c.live[i] && return (c.keys[i] => c.vals[i], i + 1)
-        i += 1
-    end
-    return nothing
+# Entries in slot order. Call with the lock held.
+function _pairs(c::ClockCache{K, V}) where {K, V}
+    return Pair{K, V}[c.keys[i] => c.vals[i] for i in eachindex(c.keys) if c.live[i]]
 end
