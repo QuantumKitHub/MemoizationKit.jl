@@ -9,5 +9,23 @@
 Transparent, strategy-aware memoization for Julia functions.
 
 > [!WARNING]
-> This package is being redesigned from scratch and has no public API yet.
-> Notes from the first prototype are in [`research/`](research/README.md), and its code is on the `archive/prototype` branch.
+> This package is under active development and its API may still change.
+> The design is described in [`research/design.md`](research/design.md).
+
+```julia
+using Cached
+
+@cached function fusion(a, b; normalize = true)
+    # expensive computation
+end
+
+fusion(1, 2)              # computed
+fusion(1, 2)              # looked up in a typed ClockCache{Tuple{Int, Int, @NamedTuple{normalize::Bool}}, V}
+uncached(fusion, 1, 2)    # bypasses the cache
+
+# choose the strategy per function and argument type
+Cached.CacheStyle(::typeof(fusion), a::Int, b::Int) = TaskLocalCache{LRU}()
+
+cache_info(fusion)        # hit/miss statistics
+set_cache_size!(fusion, 1_000)
+```

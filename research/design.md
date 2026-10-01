@@ -102,7 +102,9 @@ Defaults come from Preferences (below).
 
 ## Registry and introspection
 
-- `Cached` holds one `IdDict` from each function to its sub-cache table. The table is created at runtime on the first call and has a lock around adding sub-caches. Nothing is registered at load time.
+- Sub-caches are created at runtime, on the first call for each `(f, C{K,V})`. Nothing is registered at load time.
+- **Lookups take no lock.** The hot path reads an immutable snapshot of an `IdDict` through an atomic field. Creating a sub-cache rebuilds the snapshot under a lock, which is rare: it happens once per function and key/value type.
+- **The lookup key is a constant type** when `f` is a singleton function: `Tuple{typeof(f), C{K,V}}`. Its hash is cached, so the lookup costs about 7 ns on top of the container's `get!`, against about 35 ns for a `(f, C{K,V})` tuple key. Callable objects with fields fall back to the tuple key, so each distinct instance gets its own sub-caches.
 - `cache_info([f])` returns `Vector{CacheInfo}`, one entry per sub-cache, with `show` defined. It reports the function, `K`, `V`, the container type, hits, misses, length, and size against the limit.
 - `empty_caches!()` empties every cache, and `empty_caches!(f)` empties the caches of `f`.
 - Task-local tables are not visible to `cache_info`. **open**: whether that matters.
@@ -123,6 +125,6 @@ Defaults come from Preferences (below).
 
 ## Open questions
 
-- **Functors**: when `(x::Foo)(y)` has fields, the instance `x` must be passed to `implementation` and become part of the key.
+- ~~**Functors**~~: resolved. The instance is passed to `implementation`, and instances with fields get their own sub-caches. The per-function sub-cache cap therefore applies per instance.
 - **Revise**: should redefining a cached method empty that function's caches?
-- **Inference**: should using `return_type` for unannotated functions be the default, or opt-in?
+- ~~**Inference**~~: resolved. `return_type` is the default for unannotated functions, falling back to `Any` when the result is not concrete. It folds at compile time, so a hit is fully inferred and allocates nothing.
