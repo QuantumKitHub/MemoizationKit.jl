@@ -104,3 +104,15 @@ end
     @test s.hits + s.misses == 10_000
     @test all(((k, v),) -> v == 3k, c)
 end
+
+@testset "$C: freed slots release their values" for C in CACHETYPES
+    c = C{Int, Base.RefValue{Int}}(; maxsize = 3)
+    # build the value inside a function so no local keeps it alive
+    weak(c, k) = WeakRef(get!(() -> Ref(k), c, k))
+    w = [weak(c, k) for k in 1:3]
+    delete!(c, 1) # freed via delete!
+    resize!(c; maxsize = 0) # freed via eviction; slots stay on the free list
+    GC.gc(true)
+    @test isempty(c)
+    @test all(r -> r.value === nothing, w)
+end

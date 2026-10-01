@@ -52,11 +52,8 @@ function _newslot!(c::ClockCache, k, v, sz::Int)
 end
 
 function _remove!(c::ClockCache, i::Int)
-    delete!(c.index, c.keys[i])
     c.live[i] = false
-    c.currentsize -= c.sizes[i]
-    push!(c.free, i)
-    return c
+    return _freeslot!(c, i)
 end
 
 # Terminates within two sweeps, since the first sweep clears every reference bit.

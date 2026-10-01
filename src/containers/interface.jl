@@ -30,6 +30,25 @@ function _insert!(c::AbstractCache, k, v, sz::Int)
     return c
 end
 
+# Release slot `i`: drop it from the index and clear its key and value so they can be
+# garbage-collected while the slot sits on the free list.
+function _freeslot!(c::AbstractCache, i::Int)
+    delete!(c.index, c.keys[i])
+    _unset!(c.keys, i)
+    _unset!(c.vals, i)
+    c.currentsize -= c.sizes[i]
+    push!(c.free, i)
+    return c
+end
+
+# `Base._unsetindex!` is internal, so fall back to keeping the reference if it ever disappears.
+function _unset!(v::Vector, i::Int)
+    @static if isdefined(Base, :_unsetindex!)
+        Base._unsetindex!(v, i)
+    end
+    return v
+end
+
 function _reuseslot!(c::AbstractCache, i::Int, k, v, sz::Int)
     c.keys[i] = k
     c.vals[i] = v

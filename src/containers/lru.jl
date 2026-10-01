@@ -64,11 +64,8 @@ function _newslot!(c::LRU, k, v, sz::Int)
 end
 
 function _remove!(c::LRU, i::Int)
-    delete!(c.index, c.keys[i])
     _unlink!(c, i)
-    c.currentsize -= c.sizes[i]
-    push!(c.free, i)
-    return c
+    return _freeslot!(c, i)
 end
 
 _evict_one!(c::LRU) = _remove!(c, c.tail)
