@@ -78,7 +78,12 @@ Both implement the same small interface: `get!`, `get`, `haskey`, `empty!`, `res
 - **`LRU{K,V}`** is array-backed. It uses a `Dict{K,Int}` index, `Vector{K}`/`Vector{V}` slots, and `prev`/`next` stored as integer vectors. Nodes are never allocated, and eviction is exact LRU.
 - **`ClockCache{K,V}`** uses second-chance eviction: a ring of slots with a reference bit. A hit only sets the bit and never reorders the ring, which makes it cheap for read-heavy shared caches.
 - Each container takes a size limit, either a **count** or **bytes** measured by a `by` function. Each one holds its own lock. Task-local containers skip the lock.
-- **open**: which container is the global default. Benchmark both against TensorKit and SUNRepresentations workloads.
+- **Default for `GlobalCache`: `ClockCache`**, tentatively.
+  On synthetic workloads (`benchmark/containers.jl`), it beat `LRU` everywhere single-threaded, 28 vs 32 ns for an all-hit lookup, and had a slightly better hit rate under Zipf access.
+  Both were 1.5–3× faster than LRUCache.jl.
+  Confirm this on real TensorKit and SUNRepresentations workloads once the macro exists.
+- **open**: contention. With 8 threads, every container's per-lookup cost *rises* (all hits: about 50–75 ns, against 28–32 ns single-threaded), because every lookup takes the cache's single lock.
+  Sharding by key hash, or lock-free reads for `ClockCache`, are the candidate fixes. `TaskLocalCache` is the workaround meanwhile.
 
 ## Limits
 

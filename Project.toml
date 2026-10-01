@@ -7,4 +7,4 @@ authors = ["Lukas Devos <ldevos98@gmail.com> and contributors"]
 julia = "1.10"
 
 [workspace]
-projects = ["test", "docs"]
+projects = ["test", "docs", "benchmark"]
