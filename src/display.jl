@@ -37,14 +37,22 @@ estimated bytes. For byte-based caches Fill shows entry count and Memory shows
 `current/max` as human-readable byte counts.
 """
 function global_cache_info(io::IO = stdout)
-    if isempty(PER_SIG_CACHES)
+    # Collect all (sig_string, lru) pairs from the two-level table.
+    all_pairs = Tuple{String, Any}[]
+    for (f, inner) in GLOBAL_CACHE_TABLE
+        for (T, lru) in inner
+            push!(all_pairs, ("$(nameof(f))(::$T)", lru))
+        end
+    end
+
+    if isempty(all_pairs)
         println(io, "No global caches registered.")
         return
     end
 
     header = ("Signature", "Hits", "Misses", "Hit rate", "Fill", "Memory")
 
-    sorted_pairs = sort!(collect(PER_SIG_CACHES); by = p -> p[1])
+    sorted_pairs = sort!(all_pairs; by = p -> p[1])
 
     rows = map(sorted_pairs) do (sig_key, lru)
         info    = LRUCache.cache_info(lru)
@@ -69,7 +77,7 @@ function global_cache_info(io::IO = stdout)
         end
     end
 
-    n = length(PER_SIG_CACHES)
+    n = length(all_pairs)
     println(io, "Cache Usage Summary (", n, " cache", n == 1 ? "" : "s", ")")
     _table_hline(io, widths, '┌', '┬', '┐')
     _table_row(io, header, widths)

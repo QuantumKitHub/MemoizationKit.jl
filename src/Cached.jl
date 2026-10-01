@@ -6,7 +6,7 @@ module Cached
 
 export CacheStyle, NoCache, TaskLocalCache, GlobalLRUCache
 export @cached
-export PER_SIG_CACHES, DEFAULT_GLOBALCACHE_SIZE, GLOBALCACHE_SIZE_FUNCTION
+export GLOBAL_CACHE_TABLE, DEFAULT_GLOBALCACHE_SIZE, GLOBALCACHE_SIZE_FUNCTION
 export caches_for, empty_globalcaches!, global_cache_info, set_cache_size!, set_cache_bytesize!
 export set_default_cache_bytesize!
 

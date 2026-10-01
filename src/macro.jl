@@ -2,12 +2,29 @@
 # @cached macro — argument parsing
 # -------------------------------------------------------------------------
 
-# Decompose a `function` expression into its constituent parts.
-# Returns (; fname, params, typeex, typed, raw_args, fbody).
-# Handles the three optional head layers Julia allows:
-#   function f(args...) where {P...} :: ReturnType
-#             ↑ :call    ↑ :where      ↑ ::(2-arg)
-function _splitdef(ex)
+"""
+    splitdef(ex) -> NamedTuple
+
+Parse a `@cached` function definition expression into its constituent parts.
+
+Handles the three optional head layers Julia allows:
+
+    function f(args...) where {P...} :: ReturnType
+              ↑ :call    ↑ :where      ↑ ::(2-arg)
+
+Returns a `NamedTuple` with fields:
+- `fname` — function name symbol
+- `arg` — full argument expression (possibly with gensym'd name for anonymous `::T` args)
+- `arg_name` — argument name symbol
+- `arg_type` — argument type expression, or `nothing` if untyped
+- `params` — type parameters from `where {...}`, or `[]`
+- `typed` — `true` if a return type annotation is present
+- `typeex` — return type expression, or `nothing`
+- `fbody` — function body expression
+
+Only single-argument functions without keyword arguments or default values are supported.
+"""
+function splitdef(ex)
     Meta.isexpr(ex, :function) ||
         error("@cached: can only be used on function definitions")
     head, fbody = ex.args
@@ -16,29 +33,22 @@ function _splitdef(ex)
     params = Any[]
     if Meta.isexpr(head, :where)
         params = head.args[2:end]
-        head   = head.args[1]
+        head = head.args[1]
     end
 
     # Peel off ::ReturnType  →  f(args...)::RT
     typeex = nothing
     if Meta.isexpr(head, :(::))
         typeex = head.args[2]
-        head   = head.args[1]
+        head = head.args[1]
     end
 
     Meta.isexpr(head, :call) ||
         error("@cached: can only be used on function definitions")
 
-    fname    = head.args[1]
+    fname = head.args[1]
     raw_args = head.args[2:end]
-    return (; fname, params, typeex, typed = typeex !== nothing, raw_args, fbody)
-end
-
-# Parse a complete @cached function definition into a NamedTuple.
-# Calls _splitdef for structural decomposition, then applies @cached-specific validation.
-# Only single-argument functions are supported.
-function _parse_cached_def(ex)
-    (; fname, params, typeex, typed, raw_args, fbody) = _splitdef(ex)
+    typed = typeex !== nothing
 
     # Reject keyword arguments
     if !isempty(raw_args) && Meta.isexpr(raw_args[1], :parameters)
@@ -58,21 +68,21 @@ function _parse_cached_def(ex)
     raw = raw_args[1]
     # ::T  — anonymous typed arg; gensym a name so the signature stays valid
     if Meta.isexpr(raw, :(::)) && length(raw.args) == 1
-        g        = gensym()
-        arg      = Expr(:(::), g, raw.args[1])
+        g = gensym()
+        arg = Expr(:(::), g, raw.args[1])
         arg_name = g
         arg_type = raw.args[1]
-    # x::T  — named typed arg
+        # x::T  — named typed arg
     elseif Meta.isexpr(raw, :(::))
-        arg      = raw
+        arg = raw
         arg_name = raw.args[1]
         arg_type = raw.args[2]
-    # x  — plain untyped arg
+        # x  — plain untyped arg
     else
         raw isa Symbol || error("@cached: unsupported argument form `$raw`")
-        arg      = raw
+        arg = raw
         arg_name = raw
-        arg_type = nothing
+        arg_type = :Any
     end
 
     return (; fname, arg, arg_name, arg_type, params, typed, typeex, fbody)
@@ -85,47 +95,17 @@ function _add_params(expr, params)
 end
 
 # -------------------------------------------------------------------------
-# @cached macro — K/V type inference helpers
-# -------------------------------------------------------------------------
-
-# True if `ex` contains any symbol from `names`.
-function _expr_has_any(ex, names::Set{Symbol})
-    ex isa Symbol && return ex in names
-    ex isa Expr   && return any(a -> _expr_has_any(a, names), ex.args)
-    return false
-end
-
-# True if `typeexpr` references any TypeVar declared in `params`.
-function _has_typevars(typeexpr, params)
-    isempty(params) && return false
-    param_names = Set{Symbol}(p isa Symbol ? p : p.args[1] for p in params)
-    return _expr_has_any(typeexpr, param_names)
-end
-
-# Human-readable signature string, e.g. "f(::Int)".
-# Used as the registry key in PER_SIG_CACHES.
-function _sig_string(fname::Symbol, arg_name::Symbol, arg_type)
-    arg_str = arg_type !== nothing ? "::$(arg_type)" : string(arg_name)
-    return "$(fname)($(arg_str))"
-end
-
-# Unique module-level constant name for a signature's LRU cache.
-# e.g. f(x::Int) → :_cached_f__Int
-function _cache_const_name(fname::Symbol, arg_name::Symbol, arg_type)
-    tag   = arg_type !== nothing ? string(arg_type) : string(arg_name)
-    clean = replace(tag, r"[^a-zA-Z0-9_]" => "_")
-    return Symbol("_cached_$(fname)__$(clean)")
-end
-
-# -------------------------------------------------------------------------
 # @cached macro — code generators
 # -------------------------------------------------------------------------
 
 # Generate: function f(::NoCache, arg) where {...}; body; end
 # The implementation lives here — body is taken verbatim from the user's definition.
 function _cached_nocache_def(d)
-    fcall = _add_params(:($(d.fname)(::NoCache, $(d.arg))), d.params)
-    Expr(:function, fcall, d.fbody)
+    return :(
+        function $(d.fname)(::NoCache, $(d.arg)) where {$(d.params...)}
+            $(d.fbody)
+        end
+    )
 end
 
 # Generate the dispatch wrapper:
@@ -133,10 +113,13 @@ end
 #       f(CacheStyle(f, arg_name), arg_name)[::ReturnType]
 #   end
 function _cached_dispatch_def(d)
-    fcall = _add_params(:($(d.fname)($(d.arg))), d.params)
-    inner = :($(d.fname)(CacheStyle($(d.fname), $(d.arg_name)), $(d.arg_name)))
-    body  = d.typed ? :($(inner)::$(d.typeex)) : inner
-    Expr(:function, fcall, body)
+    return :(
+        function $(d.fname)($(d.arg)) where {$(d.params...)}
+            style = CacheStyle($(d.fname), $(d.arg_name))
+            $(d.typed ? :(result::$(d.typeex)) : :(result)) = $(d.fname)(style, $(d.arg_name))
+            return result
+        end
+    )
 end
 
 # Generate the TaskLocalCache method:
@@ -145,49 +128,54 @@ end
 #       get!(_cache, arg_name) do; f(NoCache(), arg_name); end[::ReturnType]
 #   end
 function _cached_tasklocal_def(d)
-    Dvar      = gensym(:D)
-    cachevar  = gensym(:cache)
-    impl_call = :($(d.fname)(NoCache(), $(d.arg_name)))
-    get_val   = :(get!($cachevar, $(d.arg_name)) do; $impl_call; end)
-    d.typed && (get_val = :($(get_val)::$(d.typeex)))
-    fcall = Expr(:where, :($(d.fname)(::TaskLocalCache{$Dvar}, $(d.arg))), d.params..., Dvar)
-    # Embed _tasklocal_key by value so it resolves to the Cached module at any call site.
-    body = quote
-        $cachevar::$Dvar = get!(task_local_storage(), $(_tasklocal_key)($(d.fname))) do
-            $Dvar()
+    # avoid name collisions
+    Dvar = gensym(:D)
+    cachevar = gensym(:cache)
+    task_local_key = gensym(Symbol(:tasklocal_, d.fname))
+    resultvar = gensym(:result)
+
+    return :(
+        function $(d.fname)(::TaskLocalCache{$Dvar}, $(d.arg)) where {$Dvar, $(d.params...)}
+            cache::D = get!(task_local_storage(), $task_local_key) do
+                Dvar()
+            end
+            $(d.typed ? :($resultvar::$(d.typeex)) : resultvar) = get!($cachevar, $(d.arg.name)) do
+                $(d.fname)(NoCache(), $(d.arg_name))
+            end
+            return $resultvar
         end
-        $get_val
-    end
-    Expr(:function, fcall, body)
+    )
 end
 
-# Generate the GlobalLRUCache method (const-mode, precompilation-safe).
+# Generate the GlobalLRUCache fallback method (lazy, not precompilation-safe).
 #
-# Emits:
-#   const _cached_f__T = _make_typed_global_lru(K, V)
-#   function f(::GlobalLRUCache, arg) where {...}
-#       get!(_cached_f__T, arg_name) do; f(NoCache(), arg_name); end[::ReturnType]
+# Emits a fallback with the same static type annotation as the user wrote:
+#   function f(strategy::GlobalLRUCache, arg[::AnnotationType]) where {...}
+#       _T  = typeof(arg)
+#       _lru = _ensure_global_lru!(f, _T, V)   # creates LRU{T,V} on first call
+#       _eval_global_method!(f, _T, _lru, @__MODULE__)  # Core.eval specialized method
+#       Base.invokelatest(f, strategy, arg)
 #   end
-#   _register_per_sig_cache!(sig_key, _cached_f__T, f)
+#   _register_static_sig!(sig_key, f)   # duplicate-detection + inner-dict init
 #
-# The const is referenced by name in the method body — no dict lookup at call time.
-# The compiler resolves the const to a direct pointer since it is a stable binding.
+# On the first call for a concrete type T, a specialized f(::GlobalLRUCache, arg::T)
+# method is Core.eval'd into the caller's module with the LRU embedded by value.
+# Subsequent calls for the same T dispatch directly to the specialized method.
 function _cached_global_def(d)
-    K = (d.arg_type !== nothing && !_has_typevars(d.arg_type, d.params)) ? d.arg_type : :Any
     V = d.typed ? d.typeex : :Any
+    sig_key = _sig_string(d.fname, d.arg_name, d.arg_type)
 
-    sig_key    = _sig_string(d.fname, d.arg_name, d.arg_type)
-    cache_name = _cache_const_name(d.fname, d.arg_name, d.arg_type)
-    impl_call  = :($(d.fname)(NoCache(), $(d.arg_name)))
-    get_val    = :(get!($cache_name, $(d.arg_name)) do; $impl_call; end)
-    d.typed && (get_val = :($(get_val)::$(d.typeex)))
-    fcall = _add_params(:($(d.fname)(::GlobalLRUCache, $(d.arg))), d.params)
+    fallback_fcall = _add_params(:($(d.fname)(strategy::GlobalLRUCache, $(d.arg))), d.params)
+    fallback_body = quote
+        local _T = typeof($(d.arg_name))
+        local _lru = $(_ensure_global_lru!)($(d.fname), _T, $V)
+        $(_eval_global_method!)($(d.fname), _T, _lru, @__MODULE__)
+        return Base.invokelatest($(d.fname), strategy, $(d.arg_name))
+    end
 
-    quote
-        # Embed _make_typed_global_lru by value for cross-module safety.
-        const $cache_name = $(_make_typed_global_lru)($K, $V)
-        $(Expr(:function, fcall, get_val))
-        $(_register_per_sig_cache!)($sig_key, $cache_name, $(d.fname))
+    return quote
+        $(Expr(:function, fallback_fcall, fallback_body))
+        $(_register_static_sig!)($(sig_key), $(d.fname))
     end
 end
 
@@ -206,14 +194,15 @@ The macro generates four methods for `f`:
 - `f(arg)` — dispatch wrapper that selects a strategy via `CacheStyle`
 - `f(::NoCache, arg)` — no caching; the implementation lives here
 - `f(::TaskLocalCache{D}, arg)` — per-task cache using a dict of type `D`
-- `f(::GlobalLRUCache, arg)` — process-wide LRU cache; the LRU is referenced
-  via a module-level `const` (no dict lookup at call time)
+- `f(::GlobalLRUCache, arg)` — process-wide LRU cache; the LRU is stored in a
+  two-level `IdDict` (`GLOBAL_CACHE_TABLE[f][T]`) and created lazily on the first
+  call for each concrete argument type `T`
 
-Each `@cached` call creates its own typed `LRU{K,V}` where `K` is inferred from
-the concrete argument type and `V` from the return type annotation (both fall back to `Any`).
+Each `@cached` call creates a typed `LRU{T,V}` per concrete argument type `T`
+encountered at runtime, where `V` comes from the return type annotation (falls back to `Any`).
 Multiple `@cached` calls for the same function with different signatures are allowed.
 
-This macro is **precompilation-safe**.
+This macro is **not precompilation-safe** (uses `Core.eval` to specialise methods at runtime).
 
 ## Constraints
 - Only single-argument functions are supported
@@ -246,11 +235,13 @@ See also: [`CacheStyle`](@ref), [`NoCache`](@ref),
 [`TaskLocalCache`](@ref), [`GlobalLRUCache`](@ref)
 """
 macro cached(ex)
-    d = _parse_cached_def(ex)
-    return esc(quote
-        $(_cached_nocache_def(d))
-        $(_cached_dispatch_def(d))
-        $(_cached_tasklocal_def(d))
-        $(_cached_global_def(d))
-    end)
+    d = splitdef(ex)
+    return esc(
+        quote
+            $(_cached_nocache_def(d))
+            $(_cached_dispatch_def(d))
+            $(_cached_tasklocal_def(d))
+            $(_cached_global_def(d))
+        end
+    )
 end

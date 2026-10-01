@@ -84,7 +84,12 @@ end
         @test _basic_calls[] == 2  # different key → cache miss
     end
 
-    @testset "PER_SIG_CACHES registration" begin
+    @testset "caches_for returns LRUs after first call" begin
+        # caches_for is empty before any call with GlobalLRUCache
+        @test isempty(caches_for(_test_typed_sig))
+
+        _test_typed_sig(1)  # trigger lazy creation
+
         @test !isempty(caches_for(_test_basic))
         @test caches_for(_test_basic)[1] isa LRU
     end
@@ -176,39 +181,34 @@ end
     end
 
     @testset "Typed LRU — single concrete arg" begin
-        lru = caches_for(_test_typed_sig)[1]
-        @test lru isa LRU{Int,Int}
         empty_globalcaches!()
         @test _test_typed_sig(5) == 15
+        lru = caches_for(_test_typed_sig)[1]
+        @test lru isa LRU{Int64, Int}
         @test _test_typed_sig(5) == 15   # hit
         @test length(lru) == 1
     end
 
     @testset "Multiple @cached for same function name" begin
-        lrus = caches_for(_test_multisig)
-        @test length(lrus) == 2
-        @test any(l -> l isa LRU{Int}, lrus)
-        @test any(l -> l isa LRU{Float64}, lrus)
         @test _test_multisig(3)    == 6
         @test _test_multisig(2.0)  == 6.0
+        lrus = caches_for(_test_multisig)
+        @test length(lrus) == 2
+        @test any(l -> l isa LRU{Int64}, lrus)
+        @test any(l -> l isa LRU{Float64}, lrus)
     end
 
     @testset "set_cache_size!" begin
+        # Ensure the LRU for _test_basic with Int64 exists
+        _test_basic(1)
         lru = caches_for(_test_basic)[1]
         set_cache_size!(_test_basic, 999)
         @test lru.maxsize == 999
         @test !Cached._is_bytesize(lru)
     end
 
-    @testset "set_cache_size! by signature string" begin
-        sig = "_test_typed_sig(::Int)"
-        lru = caches_for(_test_typed_sig)[1]
-        set_cache_size!(sig, 777)
-        @test lru.maxsize == 777
-        @test !Cached._is_bytesize(lru)
-    end
-
     @testset "set_cache_bytesize!" begin
+        _test_basic(1)
         lru = caches_for(_test_basic)[1]
         set_cache_bytesize!(_test_basic, 10_000_000)
         @test lru.maxsize == 10_000_000
@@ -216,7 +216,7 @@ end
 
         # Switching back to count-based should clear entries
         empty!(lru)
-        lru[(:sentinel,)] = 1  # manually insert
+        lru[42] = 1  # manually insert a valid Int64 key
         set_cache_size!(_test_basic, 100)
         @test length(lru) == 0  # switched mode → cleared
         @test !Cached._is_bytesize(lru)
@@ -226,11 +226,6 @@ end
         g(x) = x
         @test_throws ArgumentError set_cache_size!(g, 100)
         @test_throws ArgumentError set_cache_bytesize!(g, 1000)
-    end
-
-    @testset "set_cache_size!/bytesize! on unregistered signature → error" begin
-        @test_throws ArgumentError set_cache_size!("nonexistent(::Int)", 100)
-        @test_throws ArgumentError set_cache_bytesize!("nonexistent(::Int)", 1000)
     end
 
     @testset "empty_globalcaches!" begin
@@ -248,6 +243,7 @@ end
     end
 
     @testset "global_cache_info smoke test" begin
+        _test_basic(1)  # ensure at least one cache exists
         buf = IOBuffer()
         @test_nowarn global_cache_info(buf)
         output = String(take!(buf))

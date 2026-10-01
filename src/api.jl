@@ -5,10 +5,14 @@
 """
     caches_for(f::Function) -> Vector
 
-Return all per-signature LRU caches registered for function `f`.
+Return all per-type LRU caches registered for function `f`.  Caches are created
+lazily on the first call for each concrete argument type, so this returns an empty
+vector until `f` has been called at least once via the `GlobalLRUCache` strategy.
 """
 function caches_for(f::Function)
-    return [PER_SIG_CACHES[k] for k in get(_FUNC_TO_SIG_KEYS, f, String[])]
+    table = get(GLOBAL_CACHE_TABLE, f, nothing)
+    table === nothing && return Any[]
+    return collect(values(table))
 end
 
 """
@@ -17,54 +21,41 @@ end
 Clear all registered global LRU caches. Note that this also resets hit/miss statistics.
 """
 function empty_globalcaches!()
-    foreach(empty!, values(PER_SIG_CACHES))
+    for func_caches in values(GLOBAL_CACHE_TABLE)
+        foreach(empty!, values(func_caches))
+    end
     return nothing
 end
 
 """
     set_cache_size!(f::Function, newsize::Int)
-    set_cache_size!(sig::String, newsize::Int)
 
-Resize the global LRU cache(s) for `f` (all signatures) or a specific `sig` to `newsize`
+Resize all global LRU caches for `f` (all concrete-type specialisations) to `newsize`
 entries (count-based). If a cache is currently byte-based, it is switched to count-based
 and existing entries are discarded.
 
 ```julia
 set_cache_size!(myf, 50_000)
-set_cache_size!("myf(::Int)", 50_000)
 ```
 """
 function set_cache_size!(f::Function, newsize::Int)
-    keys = get(_FUNC_TO_SIG_KEYS, f, nothing)
-    keys === nothing &&
+    table = get(GLOBAL_CACHE_TABLE, f, nothing)
+    table === nothing &&
         throw(ArgumentError("No global cache registered for $(nameof(f))"))
-    for k in keys
-        _set_cache_size_by_key!(k, newsize)
+    for lru in values(table)
+        if _is_bytesize(lru)
+            empty!(lru)
+            lru.by = _COUNT_BY
+        end
+        resize!(lru; maxsize = newsize)
     end
-    return nothing
-end
-
-function set_cache_size!(sig::String, newsize::Int)
-    haskey(PER_SIG_CACHES, sig) || throw(ArgumentError("No global cache registered for signature \"$sig\""))
-    _set_cache_size_by_key!(sig, newsize)
-    return nothing
-end
-
-function _set_cache_size_by_key!(sig::String, newsize::Int)
-    lru = PER_SIG_CACHES[sig]
-    if _is_bytesize(lru)
-        empty!(lru)
-        lru.by = _COUNT_BY
-    end
-    resize!(lru; maxsize = newsize)
     return nothing
 end
 
 """
     set_cache_bytesize!(f::Function, newsize::Int; by = GLOBALCACHE_SIZE_FUNCTION[])
-    set_cache_bytesize!(sig::String, newsize::Int; by = GLOBALCACHE_SIZE_FUNCTION[])
 
-Resize the global LRU cache(s) for `f` (all signatures) or a specific `sig` to `newsize`
+Resize all global LRU caches for `f` (all concrete-type specialisations) to `newsize`
 bytes (byte-based). `by` is the function used to measure each cached value's size; it
 defaults to [`GLOBALCACHE_SIZE_FUNCTION`](@ref). Existing entries are always discarded.
 
@@ -74,26 +65,14 @@ set_cache_bytesize!(myf, 50_000_000; by = sizeof)   # cheaper estimator
 ```
 """
 function set_cache_bytesize!(f::Function, newsize::Int; by = GLOBALCACHE_SIZE_FUNCTION[])
-    keys = get(_FUNC_TO_SIG_KEYS, f, nothing)
-    keys === nothing &&
+    table = get(GLOBAL_CACHE_TABLE, f, nothing)
+    table === nothing &&
         throw(ArgumentError("No global cache registered for $(nameof(f))"))
-    for k in keys
-        _set_cache_bytesize_by_key!(k, newsize; by)
+    for lru in values(table)
+        empty!(lru)
+        lru.by = by
+        resize!(lru; maxsize = newsize)
     end
-    return nothing
-end
-
-function set_cache_bytesize!(sig::String, newsize::Int; by = GLOBALCACHE_SIZE_FUNCTION[])
-    haskey(PER_SIG_CACHES, sig) || throw(ArgumentError("No global cache registered for signature \"$sig\""))
-    _set_cache_bytesize_by_key!(sig, newsize; by)
-    return nothing
-end
-
-function _set_cache_bytesize_by_key!(sig::String, newsize::Int; by)
-    lru = PER_SIG_CACHES[sig]
-    empty!(lru)
-    lru.by = by
-    resize!(lru; maxsize = newsize)
     return nothing
 end
 
