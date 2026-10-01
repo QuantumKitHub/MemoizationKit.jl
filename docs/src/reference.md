@@ -39,4 +39,6 @@ cache_info
 empty_caches!
 set_cache_size!
 set_max_subcaches!
+set_cache_preferences!
+Cached.cachesize
 ```

@@ -118,6 +118,8 @@ Decided on 2026-10-01: per package **and** per function, through Preferences.jl.
   - `<Package>` is the package of `parentmodule(typeof(f))`. For functions extended by several packages, that is the owner of the function, not the extending packages.
   - Reading them at runtime means they cost nothing at compile time and need no recompilation of user packages. Task-local caches use the same settings.
 - `container` (`"ClockCache"` or `"LRU"`) is a compile-time preference, `[Cached]` only, because it selects the default `CacheStyle`, which must be a constant.
+- `set_cache_preferences!` writes any of these sections, choosing the section from its argument: nothing for `[Cached]`, a package module, or a function. It merges with the existing tables, and a value of `nothing` removes a setting.
+- `measure = "bytes"` uses `Cached.cachesize(x)`, which defaults to `Base.summarysize` and is meant to be overloaded per value type.
 
 ## Hooks and extensions
 

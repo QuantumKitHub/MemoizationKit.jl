@@ -4,14 +4,15 @@ using Preferences
 using Aqua: Aqua
 
 const resolve = Cached._resolve_settings
+caches(f) = last.(cache_info(f))
 
 @testset "resolution order" begin
     @test resolve("f", Dict(), nothing) == (; maxsize = 10_000, by = nothing, maxsubcaches = 100)
     cached = Dict{String, Any}("maxsize" => 500, "maxsubcaches" => 7)
     @test resolve("f", cached, nothing) == (; maxsize = 500, by = nothing, maxsubcaches = 7)
     package = Dict{String, Any}("maxsize" => 50, "measure" => "bytes", "g" => Dict{String, Any}("maxsize" => 5))
-    @test resolve("f", cached, package) == (; maxsize = 50, by = Base.summarysize, maxsubcaches = 7)
-    @test resolve("g", cached, package) == (; maxsize = 5, by = Base.summarysize, maxsubcaches = 7)
+    @test resolve("f", cached, package) == (; maxsize = 50, by = Cached.cachesize, maxsubcaches = 7)
+    @test resolve("g", cached, package) == (; maxsize = 5, by = Cached.cachesize, maxsubcaches = 7)
 end
 
 @testset "invalid preferences are ignored with a warning" begin
@@ -71,6 +72,59 @@ const hadprefsfile = isfile(prefsfile)
     # functions outside packages only see Cached's section
     @test Cached._package_section(fromcached) === nothing
 end
+@testset "set_cache_preferences!" begin
+    try
+        # global section, including the compile-time container
+        set_cache_preferences!(; maxsize = 123, container = "LRU")
+        @test load_preference(Cached, "maxsize") == 123
+        @test load_preference(Cached, "container") == "LRU"
+        set_cache_preferences!(; maxsize = nothing, container = nothing)
+        @test !has_preference(Cached, "maxsize") && !has_preference(Cached, "container")
+
+        # package and function sections combine without clobbering each other
+        set_cache_preferences!(Aqua.test_all; maxsize = 4)
+        set_cache_preferences!(Aqua; measure = "bytes")
+        set_cache_preferences!(Aqua.test_ambiguities; maxsubcaches = 2)
+        section = load_preference(Aqua, "Cached")
+        @test section == Dict(
+            "measure" => "bytes", "test_all" => Dict("maxsize" => 4),
+            "test_ambiguities" => Dict("maxsubcaches" => 2)
+        )
+        @test Cached._resolve_settings("test_all", Dict(), section) ==
+            (; maxsize = 4, by = Cached.cachesize, maxsubcaches = 100)
+        set_cache_preferences!(Aqua.test_all; maxsize = nothing) # empty sections are removed
+        @test !haskey(load_preference(Aqua, "Cached"), "test_all")
+
+        @test_throws ArgumentError set_cache_preferences!(Aqua; maxsize = -1)
+        @test_throws ArgumentError set_cache_preferences!(Aqua; measure = "kilos")
+        @test_throws ArgumentError set_cache_preferences!(Aqua; container = "LRU") # global only
+        @test_throws ArgumentError set_cache_preferences!(Aqua; maxsise = 1)
+        @test_throws ArgumentError set_cache_preferences!(x -> x; maxsize = 1) # not in a package
+    finally
+        delete_preferences!(Aqua, "Cached"; force = true)
+        delete_preferences!(Cached, "maxsize", "container"; force = true)
+    end
+end
+
+struct Blob
+    data::Vector{UInt8}
+    meta::Vector{Int}
+end
+Cached.cachesize(b::Blob) = length(b.data)
+
+@cached blob(n::Int) = Blob(zeros(UInt8, n), collect(1:1000))
+
+@testset "cachesize can be overloaded" begin
+    @test Cached.cachesize([1, 2, 3]) == Base.summarysize([1, 2, 3])
+    set_cache_size!(blob, 100; by = Cached.cachesize)
+    blob(40)
+    blob(50)
+    c = only(caches(blob))
+    @test Cached.cache_stats(c).currentsize == 90 # ignores `meta`, unlike summarysize
+    blob(20) # evicts one entry to fit
+    @test length(c) == 2
+end
+
 hadprefsfile || rm(prefsfile; force = true)
 
 @testset "container preference (compile time)" begin

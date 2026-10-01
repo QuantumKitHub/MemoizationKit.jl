@@ -25,7 +25,8 @@ empty_caches!(f) = (@lock REGISTRY.lock foreach(empty!, _caches(f)); nothing)
 
 Set the size limit of every global cache of `f`, current and future, overriding the
 preferences (see the configuration docs). Without `by`, `maxsize`
-counts entries; otherwise it bounds the sum of `by(value)` over the entries of each cache.
+counts entries; otherwise it bounds the sum of `by(value)` over the entries of each cache,
+e.g. with `by = Cached.cachesize` for bytes.
 Changing `by` discards the existing caches of `f`.
 """
 function set_cache_size!(f, maxsize::Integer; by = nothing)

@@ -12,7 +12,7 @@ from `LocalPreferences.toml`, next to the active project.
 | Key | Values | Default | Meaning |
 |:-|:-|:-|:-|
 | `maxsize` | integer ≥ 0 | `10000` | limit of each cache, in entries or bytes (see `measure`) |
-| `measure` | `"count"` or `"bytes"` | `"count"` | count entries, or measure values with `Base.summarysize` |
+| `measure` | `"count"` or `"bytes"` | `"count"` | count entries, or measure values with [`Cached.cachesize`](@ref) |
 | `maxsubcaches` | integer ≥ 1 | `100` | caches kept per function, one per key and value type; the oldest is dropped first |
 | `container` | `"ClockCache"` or `"LRU"` | `"ClockCache"` | container of the default `CacheStyle`; only in the `[Cached]` section |
 
@@ -51,10 +51,23 @@ Unknown keys and invalid values are ignored with a warning.
 - `maxsize`, `measure` and `maxsubcaches` are read when a function's first cache is created, so a change applies to functions that have not been called yet in the current session, and to every function after a restart.
 - `container` is a compile-time preference, because it selects the default `CacheStyle`. Changing it recompiles Cached on the next start.
 
-The sections can be written with Preferences.jl, for example:
+Use [`set_cache_preferences!`](@ref) to write the sections, which merges with what is already there:
 
 ```julia
-using Preferences, Cached
-set_preferences!(Cached, "maxsize" => 50_000)
-set_preferences!(TensorKit, "Cached" => Dict("fsbraid" => Dict("maxsize" => 1000)))
+using Cached
+set_cache_preferences!(; maxsize = 50_000)                 # [Cached]
+set_cache_preferences!(TensorKit; measure = "bytes")       # [TensorKit.Cached]
+set_cache_preferences!(TensorKit.fsbraid; maxsize = 1000)  # [TensorKit.Cached.fsbraid]
+set_cache_preferences!(TensorKit.fsbraid; maxsize = nothing) # remove a setting
+```
+
+## Measuring sizes
+
+With `measure = "bytes"`, every cached value is measured once, on insertion, by
+[`Cached.cachesize`](@ref), which defaults to `Base.summarysize`. That traverses the whole
+value, which can be slow for large nested values, and counts memory shared between values
+once per value. Overload it for your own types:
+
+```julia
+Cached.cachesize(t::MyTensor) = sizeof(t.data)
 ```
