@@ -146,7 +146,7 @@ hadprefsfile || rm(prefsfile; force = true)
         """
         cmd = addenv(
             `$(Base.julia_cmd()) --startup-file=no -e $code`,
-            "JULIA_PKG_OFFLINE" => "true", "JULIA_LOAD_PATH" => "@:@stdlib", "JULIA_PROJECT" => nothing,
+            "JULIA_PKG_OFFLINE" => "true", "JULIA_LOAD_PATH" => join(["@", "@stdlib"], Sys.iswindows() ? ";" : ":"), "JULIA_PROJECT" => nothing,
         )
         @test readchomp(cmd) == "true"
     end
