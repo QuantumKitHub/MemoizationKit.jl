@@ -7,7 +7,7 @@
 # The default container is a compile-time preference of Cached only, since it selects the
 # `CacheStyle` and so must be a constant.
 
-const BUILTIN_SETTINGS = (; maxsize = 10_000, measure = "count", maxsubcaches = 100)
+const BUILTIN_SETTINGS = (; maxsize = 10_000, measure = "count")
 const SETTING_KEYS = map(string, keys(BUILTIN_SETTINGS))
 """
     Cached.cachesize(x) -> Integer
@@ -44,7 +44,6 @@ function _resolve_settings(fname::AbstractString, cached::AbstractDict, package)
     return (;
         maxsize = settings["maxsize"]::Integer,
         by = MEASURES[settings["measure"]],
-        maxsubcaches = settings["maxsubcaches"]::Integer,
     )
 end
 
@@ -64,7 +63,7 @@ end
 
 _isvalid(k, v) = k == "measure" ? haskey(MEASURES, v) :
     k == "container" ? v in ("ClockCache", "LRU") :
-    v isa Integer && !(v isa Bool) && v >= (k == "maxsubcaches" ? 1 : 0)
+    v isa Integer && !(v isa Bool) && v >= 0
 
 _cached_section() = Dict{String, Any}(
     k => load_preference(@__MODULE__, k) for k in SETTING_KEYS if has_preference(@__MODULE__, k)
@@ -82,7 +81,7 @@ _fname(f) = string(f isa Function ? nameof(f) : nameof(typeof(f)))
 
 function FunctionCaches(f)
     s = _resolve_settings(_fname(f), _cached_section(), _package_section(f))
-    return FunctionCaches(s.maxsize, s.by, s.maxsubcaches, AbstractCache[])
+    return FunctionCaches(s.maxsize, s.by, AbstractCache[])
 end
 
 # The registry entry of `f`, created with its preferences on first use. Call with
@@ -97,8 +96,7 @@ _functioncaches!(f) = get!(() -> FunctionCaches(f), REGISTRY.functions, f)
 Store default cache settings in `LocalPreferences.toml`: globally (section `[Cached]`), for the
 functions of `package` (`[<package>.Cached]`), or for the function `f` (`[<owner>.Cached.<f>]`,
 where `<owner>` is the package that defines `f`). Settings are `maxsize`, `measure`
-(`"count"` or `"bytes"`), `maxsubcaches`, and, globally only, `container` (`"ClockCache"` or
-`"LRU"`). A value of `nothing` removes the setting.
+(`"count"` or `"bytes"`), and, globally only, `container` (`"ClockCache"` or `"LRU"`). A value of `nothing` removes the setting.
 
 Settings apply to functions whose first cache is created afterwards, so in practice after a
 restart; changing `container` recompiles Cached. See the configuration docs for how settings
@@ -107,7 +105,7 @@ combine.
 ```julia
 set_cache_preferences!(; maxsize = 100_000)
 set_cache_preferences!(TensorKit; measure = "bytes", maxsize = 2^30)
-set_cache_preferences!(TensorKit.fsbraid; maxsubcaches = 10)
+set_cache_preferences!(TensorKit.fsbraid; maxsize = 50_000)
 ```
 """
 set_cache_preferences!(; settings...) = set_cache_preferences!(@__MODULE__; settings...)

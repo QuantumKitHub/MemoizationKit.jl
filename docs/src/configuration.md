@@ -11,16 +11,15 @@ from `LocalPreferences.toml`, next to the active project.
 
 | Key | Values | Default | Meaning |
 |:-|:-|:-|:-|
-| `maxsize` | integer ≥ 0 | `10000` | limit of each cache, in entries or bytes (see `measure`) |
+| `maxsize` | integer ≥ 0 | `10000` | limit of a function's cache, all signatures together, in entries or bytes (see `measure`) |
 | `measure` | `"count"` or `"bytes"` | `"count"` | count entries, or measure values with [`Cached.cachesize`](@ref) |
-| `maxsubcaches` | integer ≥ 1 | `100` | caches kept per function, one per key and value type; the oldest is dropped first |
 | `container` | `"ClockCache"` or `"LRU"` | `"ClockCache"` | container of the default `CacheStyle`; only in the `[Cached]` section |
 
 ## Where settings come from
 
 Settings are looked up per function, in this order (first match wins):
 
-1. runtime calls: [`set_cache_size!`](@ref) and [`set_max_subcaches!`](@ref);
+1. runtime calls: [`set_cache_size!`](@ref);
 2. the function's own section, `[<Package>.Cached.<function>]`;
 3. the section of the package that owns the function, `[<Package>.Cached]`;
 4. Cached's own section, `[Cached]`;
@@ -41,14 +40,13 @@ maxsize = 50000
 [TensorKit.Cached.fsbraid]
 measure = "bytes"
 maxsize = 2_000_000_000
-maxsubcaches = 20
 ```
 
 Unknown keys and invalid values are ignored with a warning.
 
 ## When changes take effect
 
-- `maxsize`, `measure` and `maxsubcaches` are read when a function's first cache is created, so a change applies to functions that have not been called yet in the current session, and to every function after a restart.
+- `maxsize` and `measure` are read when a function's first cache is created, so a change applies to functions that have not been called yet in the current session, and to every function after a restart.
 - `container` is a compile-time preference, because it selects the default `CacheStyle`. Changing it recompiles Cached on the next start.
 
 Use [`set_cache_preferences!`](@ref) to write the sections, which merges with what is already there:

@@ -3,7 +3,7 @@ module Cached
 export @cached, uncached
 export CacheStyle, NoCache, GlobalCache, GlobalLRUCache, TaskLocalCache
 export LRU, ClockCache
-export cache_info, empty_caches!, set_cache_size!, set_max_subcaches!, set_cache_preferences!
+export cache_info, empty_caches!, set_cache_size!, set_cache_preferences!
 
 # documented API that is used qualified, e.g. by overloading `Cached.cachesize`
 @static if VERSION >= v"1.11.0-DEV.469"

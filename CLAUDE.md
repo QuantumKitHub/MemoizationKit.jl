@@ -39,7 +39,7 @@ julia --project=/tmp/runic -e 'using Pkg; Pkg.add("Runic"); using Runic; Runic.m
   and leaves `f` with its original signature, calling `Cached.call`. ExprTools does the parsing.
 - `src/call.jl`: `call` picks the value type `V` (annotation, or `return_type`) and dispatches on
   the `CacheStyle` (`NoCache`, `GlobalCache{C}`, `TaskLocalCache{C}`).
-- `src/registry.jl`: global sub-caches, one `C{K,V}` per function and key/value type, looked up
+- `src/registry.jl`: global caches, one untyped `C{Any,Any}` per function (its budget), looked up
   lock-free in an atomically published `IdDict` snapshot.
 - `src/containers/`: `LRU` and `ClockCache`, sharing the `AbstractCache` interface.
 

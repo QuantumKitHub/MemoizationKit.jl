@@ -8,8 +8,8 @@ instead of heap-allocated nodes. Evicts exactly the least recently used entry.
 all entries.
 """
 mutable struct LRU{K, V} <: AbstractCache{K, V}
-    const index::Dict{K, Int}
-    const keys::Vector{K}
+    const index::Dict{StoredKey, Int}
+    const keys::Vector{StoredKey}
     const vals::Vector{V}
     const sizes::Vector{Int}
     const prev::Vector{Int}
@@ -28,7 +28,7 @@ end
 function LRU{K, V}(; maxsize::Integer = 10_000, by = nothing) where {K, V}
     maxsize >= 0 || throw(ArgumentError("maxsize must be non-negative"))
     return LRU{K, V}(
-        Dict{K, Int}(), K[], V[], Int[], Int[], Int[], Int[],
+        Dict{StoredKey, Int}(), StoredKey[], V[], Int[], Int[], Int[], Int[],
         0, 0, 0, maxsize, by, 0, 0, ReentrantLock()
     )
 end
@@ -83,7 +83,7 @@ function _pairs(c::LRU{K, V}) where {K, V}
     ps = Vector{Pair{K, V}}(undef, length(c.index))
     i = c.head
     for j in eachindex(ps)
-        ps[j] = c.keys[i] => c.vals[i]
+        ps[j] = c.keys[i].key::K => c.vals[i]
         i = c.next[i]
     end
     return ps

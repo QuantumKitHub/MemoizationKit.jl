@@ -147,3 +147,23 @@ end
     end
     @test ok[]
 end
+
+lookup(c, k) = get!(() -> error("not cached"), c, k)
+# measured inside a function: in the loop below the types vary, and a dynamic call boxes its arguments
+allocs(c, k) = (lookup(c, k); @allocated lookup(c, k))
+
+@testset "$C: untyped keys" for C in CACHETYPES
+    c = C{Any, Any}(; maxsize = 100)
+    c[1] = "int"
+    c[1.0] = "float" # isequal to 1, but a different type: a different entry
+    c[(1,)] = "tuple"
+    @test length(c) == 3 && c[1] == "int" && c[1.0] == "float" && c[(1,)] == "tuple"
+    delete!(c, 1.0)
+    @test !haskey(c, 1.0) && haskey(c, 1)
+    # hits do not box the key, neither plain bits nor heap-allocated keys
+    bits, heap = (1, 2), ([1, 2], :a)
+    c[bits] = 1
+    c[heap] = 2
+    @test allocs(c, bits) == 0
+    @test allocs(c, heap) == 0
+end

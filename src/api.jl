@@ -2,8 +2,9 @@
     cache_info() -> Vector{Pair{Any, AbstractCache}}
     cache_info(f) -> Vector{Pair{Any, AbstractCache}}
 
-The global caches, or the global caches of `f`, as `f => cache` pairs with the oldest cache of
-each function first. The caches are live: they show their size and hit statistics, and can be
+The global caches, or the global caches of `f`, as `f => cache` pairs. A function has one
+cache, holding all its signatures (or one per container type, if its [`CacheStyle`](@ref)
+selects several). The caches are live: they show their size and hit statistics, and can be
 inspected, emptied or resized directly. Task-local caches are not included.
 """
 cache_info() = @lock REGISTRY.lock Pair{Any, AbstractCache}[f => c for (f, fc) in REGISTRY.functions for c in fc.caches]
@@ -23,11 +24,10 @@ empty_caches!(f) = (@lock REGISTRY.lock foreach(empty!, _caches(f)); nothing)
 """
     set_cache_size!(f, maxsize::Integer; by = nothing)
 
-Set the size limit of every global cache of `f`, current and future, overriding the
-preferences (see the configuration docs). Without `by`, `maxsize`
-counts entries; otherwise it bounds the sum of `by(value)` over the entries of each cache,
-e.g. with `by = Cached.cachesize` for bytes.
-Changing `by` discards the existing caches of `f`.
+Set the size limit of the global cache of `f`, overriding the preferences (see the
+configuration docs). The limit applies to the function as a whole, all signatures together.
+Without `by`, `maxsize` counts entries; otherwise it bounds the sum of `by(value)` over the
+entries, e.g. with `by = Cached.cachesize` for bytes. Changing `by` discards the cache of `f`.
 """
 function set_cache_size!(f, maxsize::Integer; by = nothing)
     maxsize >= 0 || throw(ArgumentError("maxsize must be non-negative"))
@@ -39,25 +39,6 @@ function set_cache_size!(f, maxsize::Integer; by = nothing)
         else
             fc.by = by
             empty!(fc.caches)
-            _publish!()
-        end
-    end
-    return nothing
-end
-
-"""
-    set_max_subcaches!(f, n::Integer)
-
-Limit the number of global caches of `f`, one per key and value type. When a new key type
-would exceed the limit, the oldest cache of `f` is dropped.
-"""
-function set_max_subcaches!(f, n::Integer)
-    n >= 1 || throw(ArgumentError("a function needs at least one cache"))
-    @lock REGISTRY.lock begin
-        fc = _functioncaches!(f)
-        fc.maxsubcaches = n
-        if length(fc.caches) > n
-            deleteat!(fc.caches, 1:(length(fc.caches) - n))
             _publish!()
         end
     end
