@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - 'main'
+    tags: '*'
+    paths-ignore:
+      - 'docs/**'
+      - 'research/**'
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
+
+jobs:
+  # `test/` is flat (ParallelTestRunner parallelizes across `test_*.jl` itself), so use the plain
+  # `Tests` reusable workflow rather than `TestGroups`, with the version/OS matrix expanded here.
+  tests:
+    name: "Tests"
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ["min", "1"]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    uses: "QuantumKitHub/QuantumKitHubActions/.github/workflows/Tests.yml@main"
+    with:
+      julia-version: "${{ matrix.version }}"
+      os: "${{ matrix.os }}"
+      # Caches must be exercised under contention, so always run multithreaded.
+      nthreads: 2
+      coverage: ${{ matrix.os == 'ubuntu-latest' && matrix.version == '1' }}
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  # Single aggregate check for branch protection.
+  ci-success:
+    name: "ci-success"
+    needs: tests
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Check that all test jobs succeeded"
+        if: needs.tests.result != 'success'
+        run: |
+          echo "Test matrix result: ${{ needs.tests.result }}"
+          exit 1
+      - run: echo "All test jobs succeeded."

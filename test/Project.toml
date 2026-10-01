@@ -1,0 +1,14 @@
+[deps]
+Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
+Cached = "1b238080-9255-4fe9-b224-89eb24efe93b"
+ParallelTestRunner = "d3525ed8-44d0-4b2c-a655-542cee43accc"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[compat]
+Aqua = "0.8.9"
+ParallelTestRunner = "2.2.0"
+Test = "1.10"
+julia = "1.10"
+
+[sources]
+Cached = {path = ".."}
