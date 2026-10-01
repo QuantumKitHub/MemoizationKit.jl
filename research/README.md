@@ -13,6 +13,7 @@ The prototype code itself lives on the `archive/prototype` branch:
 
 | File | What it covers |
 |:-|:-|
+| [design.md](design.md) | **The agreed design for the rewrite** |
 | [origin.md](origin.md) | Where the design comes from (TensorKit's internal `@cached`) and what the package was meant to fix |
 | [architecture.md](architecture.md) | The `CacheStyle` dispatch pattern and the methods the macro generates |
 | [global-cache-binding.md](global-cache-binding.md) | How the generated method finds its cache: four approaches tried, with trade-offs |
