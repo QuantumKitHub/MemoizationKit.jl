@@ -40,4 +40,5 @@ empty_caches!
 set_cache_size!
 set_cache_preferences!
 Cached.cachesize
+cache_dashboard
 ```

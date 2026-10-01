@@ -31,3 +31,5 @@ set_cache_size!(fusion, 1_000)
 ```
 
 Default sizes can be configured per package and per function through `LocalPreferences.toml`; see the [configuration docs](https://lkdvos.github.io/Cached.jl/dev/configuration/).
+
+With [Tachikoma.jl](https://github.com/kahliburke/Tachikoma.jl) loaded, `cache_dashboard()` opens a live terminal dashboard to browse, empty and resize the caches; see the [dashboard docs](https://lkdvos.github.io/Cached.jl/dev/dashboard/).

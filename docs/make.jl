@@ -12,7 +12,7 @@ makedocs(;
         edit_link = "main",
         assets = String[],
     ),
-    pages = ["Home" => "index.md", "Configuration" => "configuration.md", "Reference" => "reference.md"],
+    pages = ["Home" => "index.md", "Configuration" => "configuration.md", "Dashboard" => "dashboard.md", "Reference" => "reference.md"],
 )
 
 deploydocs(; repo = "github.com/lkdvos/Cached.jl", devbranch = "main", push_preview = true)
