@@ -105,7 +105,7 @@ Defaults come from Preferences (below).
 - Sub-caches are created at runtime, on the first call for each `(f, C{K,V})`. Nothing is registered at load time.
 - **Lookups take no lock.** The hot path reads an immutable snapshot of an `IdDict` through an atomic field. Creating a sub-cache rebuilds the snapshot under a lock, which is rare: it happens once per function and key/value type.
 - **The lookup key is a constant type** when `f` is a singleton function: `Tuple{typeof(f), C{K,V}}`. Its hash is cached, so the lookup costs about 7 ns on top of the container's `get!`, against about 35 ns for a `(f, C{K,V})` tuple key. Callable objects with fields fall back to the tuple key, so each distinct instance gets its own sub-caches.
-- `cache_info([f])` returns `Vector{CacheInfo}`, one entry per sub-cache, with `show` defined. It reports the function, `K`, `V`, the container type, hits, misses, length, and size against the limit.
+- `cache_info([f])` returns the live caches as `f => cache` pairs, oldest first. Containers `show` as a one-line summary (type, size against the limit, hits, misses), so no separate summary type is needed, and the pairs can be emptied or resized directly. Container iteration walks a snapshot taken under the lock, so it is thread-safe.
 - `empty_caches!()` empties every cache, and `empty_caches!(f)` empties the caches of `f`.
 - Task-local tables are not visible to `cache_info`. **open**: whether that matters.
 

@@ -36,7 +36,6 @@ TaskLocalCache
 
 ```@docs
 cache_info
-CacheInfo
 empty_caches!
 set_cache_size!
 set_max_subcaches!

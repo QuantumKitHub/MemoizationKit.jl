@@ -1,46 +1,13 @@
 """
-    CacheInfo
+    cache_info() -> Vector{Pair{Any, AbstractCache}}
+    cache_info(f) -> Vector{Pair{Any, AbstractCache}}
 
-Summary of one global cache, as returned by [`cache_info`](@ref): the function `f`, the
-container type `C{K, V}`, and its `hits`, `misses`, `length`, `currentsize` and `maxsize`.
+The global caches, or the global caches of `f`, as `f => cache` pairs with the oldest cache of
+each function first. The caches are live: they show their size and hit statistics, and can be
+inspected, emptied or resized directly. Task-local caches are not included.
 """
-struct CacheInfo
-    f::Any
-    type::Type
-    hits::Int
-    misses::Int
-    length::Int
-    currentsize::Int
-    maxsize::Int
-end
-
-function Base.show(io::IO, ::MIME"text/plain", info::CacheInfo)
-    total = info.hits + info.misses
-    rate = total == 0 ? "-" : string(round(100 * info.hits / total; digits = 1), "%")
-    print(
-        io, info.f isa Function ? nameof(info.f) : info.f, " :: ", info.type, ": ", info.length, " entries, size ",
-        info.currentsize, "/", info.maxsize, ", ", info.hits, " hits, ", info.misses,
-        " misses (", rate, ")"
-    )
-    return nothing
-end
-
-"""
-    cache_info() -> Vector{CacheInfo}
-    cache_info(f) -> Vector{CacheInfo}
-
-Statistics of every global cache, or of the global caches of `f`. Task-local caches are not
-included.
-"""
-cache_info() = @lock REGISTRY.lock reduce(vcat, (_info(f, fc) for (f, fc) in REGISTRY.functions); init = CacheInfo[])
-cache_info(f) = @lock REGISTRY.lock _info(f, get(FunctionCaches, REGISTRY.functions, f))
-
-function _info(f, fc::FunctionCaches)
-    return map(fc.caches) do c
-        s = cache_stats(c)
-        CacheInfo(f, typeof(c), s.hits, s.misses, s.length, s.currentsize, s.maxsize)
-    end
-end
+cache_info() = @lock REGISTRY.lock Pair{Any, AbstractCache}[f => c for (f, fc) in REGISTRY.functions for c in fc.caches]
+cache_info(f) = @lock REGISTRY.lock Pair{Any, AbstractCache}[f => c for c in get(FunctionCaches, REGISTRY.functions, f).caches]
 
 """
     empty_caches!()

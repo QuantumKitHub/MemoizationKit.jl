@@ -53,6 +53,8 @@ Cached.CacheStyle(::typeof(tasklocal), x::Symbol) = TaskLocalCache{Dict}()
 @cached sized(x) = counting(x)
 @cached manytypes(x) = counting(x)
 
+caches(f) = last.(cache_info(f))
+
 # returns (result, number of implementation calls)
 function ncalls(f)
     before = calls[]
@@ -84,13 +86,13 @@ end
     @test converted(1) === 1.0
     @test dependent(1) == [1] && dependent(1) isa Vector{Int}
     @test dependent(1.5) isa Vector{Float64}
-    @test any(i -> i.type == ClockCache{Tuple{Int}, Vector{Int}}, cache_info(dependent))
-    @test only(cache_info(converted)).type == ClockCache{Tuple{Int}, Float64}
+    @test ClockCache{Tuple{Int}, Vector{Int}} in typeof.(caches(dependent))
+    @test typeof(only(caches(converted))) == ClockCache{Tuple{Int}, Float64}
     # without annotation the value type is inferred, falling back to `Any` if not concrete
-    @test any(i -> i.type == ClockCache{Tuple{Int}, Int}, cache_info(basic))
+    @test ClockCache{Tuple{Int}, Int} in typeof.(caches(basic))
     unstable(1)
     unstable(-1)
-    @test only(cache_info(unstable)).type == ClockCache{Tuple{Int}, Any}
+    @test typeof(only(caches(unstable))) == ClockCache{Tuple{Int}, Any}
 end
 
 @testset "type stability" begin
@@ -137,31 +139,33 @@ end
         sized(i)
     end
     set_cache_size!(sized, 5)
-    @test only(cache_info(sized)).length == 5
+    @test length(only(caches(sized))) == 5
     for i in 21:40
         sized(i)
     end
-    @test only(cache_info(sized)).length == 5
+    @test length(only(caches(sized))) == 5
     set_cache_size!(sized, 100; by = Returns(10)) # new size measure discards the caches
     @test isempty(cache_info(sized))
     for i in 1:20
         sized(i)
     end
-    @test only(cache_info(sized)).currentsize == 100
+    @test Cached.cache_stats(only(caches(sized))).currentsize == 100
 
     set_max_subcaches!(manytypes, 2)
     manytypes(1)
     manytypes(1.0)
     manytypes(:a) # drops the Int cache
-    @test [i.type.parameters[1] for i in cache_info(manytypes)] == [Tuple{Float64}, Tuple{Symbol}]
+    @test [keytype(c) for c in caches(manytypes)] == [Tuple{Float64}, Tuple{Symbol}]
     @test ncalls(() -> manytypes(1)) == (1, 1)
 
     empty_caches!(sized)
-    @test only(cache_info(sized)).length == 0
+    @test length(only(caches(sized))) == 0
     @test ncalls(() -> basic(3)) == (9, 0)
     empty_caches!()
     @test ncalls(() -> basic(3)) == (9, 1)
-    @test sprint(show, MIME"text/plain"(), first(cache_info(basic))) isa String
+    @test occursin("ClockCache{Tuple{Int64}, Int64}(1/10000 entries", sprint(show, cache_info(basic)))
+    @test all(p -> first(p) === basic, cache_info(basic))
+    @test length(cache_info()) >= length(cache_info(basic)) + length(cache_info(sized))
 end
 
 @testset "concurrency" begin
@@ -173,7 +177,7 @@ end
         shared(i % 100) == 2 * (i % 100) || (ok[] = false)
     end
     @test ok[]
-    @test only(cache_info(shared)).length == 100
+    @test length(only(caches(shared))) == 100
 end
 
 @testset "macro errors" begin
