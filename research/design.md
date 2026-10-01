@@ -111,8 +111,15 @@ Defaults come from Preferences (below).
 
 ## Configuration
 
-- Defaults are read through Preferences: sub-cache size, count or bytes mode, the sub-cache cap, and the container type.
-- **open**: whether these are keyed per calling package, which would require the macro to load preferences in the user's module, or only on Cached.
+Decided on 2026-10-01: per package **and** per function, through Preferences.jl. The full description is in `docs/src/configuration.md`.
+
+- Settings are `maxsize`, `measure` (`"count"` or `"bytes"`, the latter using `Base.summarysize`) and `maxsubcaches`.
+  - They are resolved once per function, when its first cache is created, in this order: runtime calls, then `[<Package>.Cached.<function>]`, then `[<Package>.Cached]`, then `[Cached]`, then the built-in defaults.
+  - `<Package>` is the package of `parentmodule(typeof(f))`. For functions extended by several packages, that is the owner of the function, not the extending packages.
+  - Reading them at runtime means they cost nothing at compile time and need no recompilation of user packages. Task-local caches use the same settings.
+- `container` (`"ClockCache"` or `"LRU"`) is a compile-time preference, `[Cached]` only, because it selects the default `CacheStyle`, which must be a constant.
+- `set_cache_preferences!` writes any of these sections, choosing the section from its argument: nothing for `[Cached]`, a package module, or a function. It merges with the existing tables, and a value of `nothing` removes a setting.
+- `measure = "bytes"` uses `Cached.cachesize(x)`, which defaults to `Base.summarysize` and is meant to be overloaded per value type.
 
 ## Hooks and extensions
 

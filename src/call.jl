@@ -37,10 +37,14 @@ end
 function _call(f::F, ::TaskLocalCache{C}, ::Type{V}, key::K, args, kw) where {F, C, V, K}
     T = _localtype(C, K, V)
     table = get!(IdDict{Any, Any}, task_local_storage(), :__Cached_tasklocal__)::IdDict{Any, Any}
-    cache = get!(() -> _newlocal(T), table, (f, T))::T
+    cache = get!(() -> _newlocal(f, T), table, (f, T))::T
     return get!(() -> implementation(f, args...; kw...), cache, key)
 end
 
 _localtype(C, K, V) = C isa UnionAll ? C{K, V} : C
-_newlocal(::Type{T}) where {T <: AbstractCache} = T(; maxsize = DEFAULT_MAXSIZE)
-_newlocal(::Type{T}) where {T} = T()
+# Task-local caches follow the size settings of `f`, but are not registered.
+function _newlocal(f, ::Type{T}) where {T <: AbstractCache}
+    fc = @lock REGISTRY.lock _functioncaches!(f)
+    return T(; maxsize = fc.maxsize, by = fc.by)
+end
+_newlocal(f, ::Type{T}) where {T} = T()
