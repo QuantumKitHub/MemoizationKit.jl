@@ -30,7 +30,18 @@ julia --project=docs docs/make.jl
 julia --project=/tmp/runic -e 'using Pkg; Pkg.add("Runic"); using Runic; Runic.main(["--inplace", "src", "test"])'
 ```
 
-## Status
+## Architecture
 
-The package is being restarted from scratch. `research/` holds design notes from the first
-prototype (the code is on the `archive/prototype` branch); treat them as inspiration, not a spec.
+`research/design.md` is the spec; the other notes in `research/` describe the archived prototype
+(branch `archive/prototype`) and are background only.
+
+- `src/macro.jl`: `@cached` moves the body to a method of `Cached.implementation(::typeof(f), ...)`
+  and leaves `f` with its original signature, calling `Cached.call`. ExprTools does the parsing.
+- `src/call.jl`: `call` picks the value type `V` (annotation, or `return_type`) and dispatches on
+  the `CacheStyle` (`NoCache`, `GlobalCache{C}`, `TaskLocalCache{C}`).
+- `src/registry.jl`: global sub-caches, one `C{K,V}` per function and key/value type, looked up
+  lock-free in an atomically published `IdDict` snapshot.
+- `src/containers/`: `LRU` and `ClockCache`, sharing the `AbstractCache` interface.
+
+Hot-path invariants, checked by the tests: a cache hit is fully inferred and allocates nothing.
+Benchmark with `julia --project=benchmark -t 8 benchmark/containers.jl`.
