@@ -41,6 +41,33 @@ module Other
 end
 @cached Other.owned(x::Symbol) = counting(x)
 
+# same name in different modules
+module ClashA
+    using Cached
+    @cached f(x) = (:A, x)
+end
+module ClashB
+    using Cached
+    @cached f(x) = (:B, x)
+end
+
+# two modules caching their own methods of one shared function
+module Shared
+    fusion(x) = x
+end
+module SectorsA
+    using Cached
+    import ..Shared
+    struct IrrepA end
+    @cached Shared.fusion(::IrrepA) = :A
+end
+module SectorsB
+    using Cached
+    import ..Shared
+    struct IrrepB end
+    @cached Shared.fusion(::IrrepB) = :B
+end
+
 @cached fib(n::Int) = n <= 2 ? big(1) : fib(n - 1) + fib(n - 2)
 
 @cached nocache(x) = counting(x)
@@ -113,6 +140,24 @@ end
     @test ncalls(() -> Other.owned(:a)) == (:a, 1)
     @test ncalls(() -> Other.owned(:a)) == (:a, 0)
     @test Other.owned(1) == 1 # other methods are untouched
+end
+
+@testset "functions with the same name" begin
+    @test ClashA.f(1) == (:A, 1) && ClashB.f(1) == (:B, 1)
+    @test ClashA.f(1) == (:A, 1) && ClashB.f(1) == (:B, 1) # cache hits stay separate
+    @test length(cache_info(ClashA.f)) == length(cache_info(ClashB.f)) == 1
+    @test only(caches(ClashA.f)) !== only(caches(ClashB.f))
+    # printing qualifies the function by its module unless shown from inside it
+    shown = sprint(show, cache_info(ClashA.f))
+    @test occursin("ClashA.f =>", shown)
+    @test occursin("[f =>", sprint(show, cache_info(ClashA.f); context = :module => ClashA))
+
+    # methods of one function cached from different modules share its caches by key type
+    @test Shared.fusion(SectorsA.IrrepA()) === :A
+    @test Shared.fusion(SectorsB.IrrepB()) === :B
+    @test uncached(Shared.fusion, SectorsB.IrrepB()) === :B
+    @test Shared.fusion(1) == 1 # the uncached method is untouched
+    @test Set(keytype.(caches(Shared.fusion))) == Set([Tuple{SectorsA.IrrepA}, Tuple{SectorsB.IrrepB}])
 end
 
 @testset "recursion" begin
