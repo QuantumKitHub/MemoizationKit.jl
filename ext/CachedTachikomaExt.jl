@@ -13,14 +13,23 @@ using Tachikoma: Tachikoma, Model, Frame, KeyEvent, Rect, Layout, Vertical, Fixe
 
 const STATS = @NamedTuple{hits::Int, misses::Int, length::Int, currentsize::Int, maxsize::Int}
 const HISTORY = 120 # refreshes kept for the sparklines
+const WINDOW = 10 # refreshes over which the recent hit rate is computed
 const MINSIZE = (40, 8) # columns and rows below which only a message is shown
 
-# Hits per second between successive refreshes.
+# Hits and misses between successive refreshes, and hits per second.
 mutable struct Trend
     hits::Int
     misses::Int
+    deltas::Vector{Tuple{Int, Int}}
     rates::Vector{Float64}
-    recent::Float64 # hit rate over the last interval
+end
+
+# Hit rate over the last `WINDOW` refreshes, from the summed deltas so that quiet intervals
+# do not weigh in; `NaN` without lookups.
+function recent(t::Trend)
+    window = @view t.deltas[max(end - WINDOW + 1, 1):end]
+    h, m = sum(first, window; init = 0), sum(last, window; init = 0)
+    return h + m == 0 ? NaN : h / (h + m)
 end
 
 # A function (`cache === nothing`) with its sub-caches as `children`, or one sub-cache.
@@ -56,7 +65,7 @@ end
 # Sort orders, by key on a `Row`; the last three are also the optional table columns.
 const SORTS = (
     "Name" => r -> r.label,
-    "Hit rate" => r -> (h = hitrate(r.stats); isnan(h) ? -1.0 : h),
+    "Hit rate" => r -> (h = recent(r.trend); isnan(h) ? -1.0 : h),
     "Size" => r -> fill_fraction(r.stats),
     "Activity" => activity,
 )
@@ -112,22 +121,25 @@ function refresh!(m::Dashboard, now = time())
         children = caches[f]
         s = reduce((a, b) -> STATS(map(+, a, b)), (c.stats for c in children))
         kind = allequal(c.kind for c in children) ? first(children).kind : "mixed"
-        trend = trend!(trends, m.trends, f, s, elapsed)
+        # a function's deltas are those of its caches, leaving out caches that are new
+        old = [last(c.trend.deltas) for c in children if haskey(m.trends, c.cache)]
+        delta = (sum(first, old; init = 0), sum(last, old; init = 0))
+        trend = trend!(trends, m.trends, f, s, elapsed, delta)
         Row(f, nothing, repr(f), kind, first(children).bytes, s, trend, children)
     end
     m.trends = trends # drops the trends of caches that are gone
     return rebuild!(m)
 end
 
-function trend!(trends, old, id, s, elapsed)
+function trend!(trends, old, id, s, elapsed, delta = nothing)
     t = get(old, id, nothing)
     if t === nothing
-        t = Trend(s.hits, s.misses, Float64[], NaN)
+        t = Trend(s.hits, s.misses, Tuple{Int, Int}[], Float64[])
     else
-        dh, dm = max(s.hits - t.hits, 0), max(s.misses - t.misses, 0)
-        push!(t.rates, elapsed > 0 ? dh / elapsed : 0.0)
-        length(t.rates) > HISTORY && popfirst!(t.rates)
-        t.recent = dh + dm == 0 ? NaN : dh / (dh + dm)
+        d = something(delta, (max(s.hits - t.hits, 0), max(s.misses - t.misses, 0)))
+        push!(t.deltas, d)
+        push!(t.rates, elapsed > 0 ? first(d) / elapsed : 0.0)
+        length(t.deltas) > HISTORY && (popfirst!(t.deltas); popfirst!(t.rates))
         t.hits, t.misses = s.hits, s.misses
     end
     return trends[id] = t
@@ -285,6 +297,7 @@ end
 const COLUMNS = (
     ("Hit rate", 13, (buf, x, y, r, m) -> draw_hitrate(buf, x, y, r)),
     ("Size", 22, (buf, x, y, r, m) -> draw_size(buf, x, y, r, m)),
+    ("Kind", 5, (buf, x, y, r, m) -> set_string!(buf, x, y, r.kind, tstyle(:text_dim))),
     ("Activity", 8, (buf, x, y, r, m) -> render(Sparkline(r.trend.rates; style = tstyle(:accent)), Rect(x, y, 8, 1), buf)),
 )
 const MINNAME = 20 # width of the name column below which columns are dropped
@@ -295,7 +308,10 @@ function render_table(m::Dashboard, area::Rect, buf)
         k += 1
     end
     columns = COLUMNS[1:k]
-    namewidth = area.width - 1 - sum(c -> c[2] + 1, columns; init = 0)
+    # as wide as the longest label (over all lines, so that scrolling keeps the layout), and
+    # any spare width is left at the right
+    longest = maximum(l -> textwidth(last(l)), m.lines; init = 0)
+    namewidth = clamp(longest, MINNAME, area.width - 1 - sum(c -> c[2] + 1, columns; init = 0))
 
     sorted, arrow = first(SORTS[m.sortcol]), m.reverse ? " ▼" : " ▲"
     x = area.x + 1
@@ -333,7 +349,7 @@ function bar!(buf, x, y, w, frac, style)
 end
 
 function draw_hitrate(buf, x, y, r::Row)
-    h = hitrate(r.stats)
+    h = recent(r.trend)
     style = isnan(h) ? tstyle(:text_dim) : tstyle(h < 0.5 ? :error : h < 0.8 ? :warning : :success)
     bar!(buf, x, y, 8, isnan(h) ? 0.0 : h, style)
     set_string!(buf, x + 9, y, isnan(h) ? "   -" : lpad("$(round(Int, 100h))%", 4), style)
@@ -361,7 +377,7 @@ function render_detail(r::Row, area::Rect, buf)
     caches = length(r.children) > 1 ? "$(length(r.children)) caches · " : ""
     lines = (
         "$caches$(r.kind) · $size · $(s.hits) hits · $(s.misses) misses",
-        "hit rate $(_percent(hitrate(s))), recent $(_percent(t.recent)) · $(round(activity(r); digits = 1)) hits/s",
+        "hit rate: recent $(_percent(recent(t))) · lifetime $(_percent(hitrate(s))) · $(round(activity(r); digits = 1)) hits/s",
     )
     for (i, line) in enumerate(lines)
         set_string!(buf, inner.x, inner.y + i - 1, line, tstyle(:text); max_x = right(inner))

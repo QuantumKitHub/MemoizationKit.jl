@@ -16,10 +16,13 @@ cache_dashboard(; interval = 0.2, filter = "fs") # faster, only functions whose 
 
 Each function is a row, with its caches (one per key and value type) underneath, shown as call
 signatures such as `fsymbol(::Int64, ::Int64, ::Int64)::Int64`. A function with a single cache
-is shown as one row. The columns are bars for the hit rate and for the size against the limit
-(in bytes for caches measured in bytes), and a sparkline of recent hits per second; narrow
-terminals drop columns from the right, and below 40×8 the dashboard asks for a larger terminal.
-The panel at the bottom shows the numbers for the selected row. Task-local caches are not shown.
+is shown as one row. The columns are a bar for the recent hit rate (over the last 10 refreshes,
+`-` without lookups), a bar for the size against the limit (in bytes for caches measured in
+bytes), the container (`LRU`, `Clock`, or `mixed` for a function whose caches differ), and a
+sparkline of hits per second. The name column is as wide as the longest name; narrow terminals
+cut names in the middle and drop columns from the right, and below 40×8 the dashboard asks for
+a larger terminal. The panel at the bottom shows the numbers for the selected row, including
+its lifetime hit rate. Task-local caches are not shown.
 
 | Key | Action |
 |:-|:-|
