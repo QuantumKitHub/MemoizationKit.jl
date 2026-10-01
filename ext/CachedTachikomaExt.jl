@@ -305,7 +305,8 @@ function render_table(m::Dashboard, area::Rect, buf)
     end
 
     height = area.height - 1
-    m.offset = clamp(m.offset, max(m.selected - height, 0), max(m.selected - 1, 0))
+    # keep the selection visible, without blank rows below while rows above are hidden
+    m.offset = clamp(m.offset, max(m.selected - height, 0), max(min(m.selected - 1, length(m.lines) - height), 0))
     for (i, (r, label)) in enumerate(m.lines[(m.offset + 1):min(end, m.offset + height)])
         y = area.y + i
         issel = m.offset + i == m.selected

@@ -120,6 +120,19 @@ end
     @test find_text(draw(m; width = 80, height = 16), "hits/s") !== nothing
 end
 
+@cached dash_many(x) = x
+foreach(dash_many, (1, 1.0, :a, "a", 'a', Int8(1))) # six caches: more rows than fit at 40×8
+
+@testset "scrolling back when the terminal grows" begin
+    m = dashboard("dash_many")
+    @test length(m.lines) == 7
+    m.selected = length(m.lines)
+    draw(m; width = 60, height = 8) # scrolls down to show the selection
+    @test m.offset > 0
+    draw(m; width = 60, height = 30) # everything fits again
+    @test m.offset == 0
+end
+
 @testset "empty and resize through key events" begin
     m = dashboard("dash_square")
     a, b = (c.cache for c in first(first(m.lines)).children)
