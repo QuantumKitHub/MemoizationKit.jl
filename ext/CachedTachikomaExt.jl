@@ -6,7 +6,7 @@ module CachedTachikomaExt
 # every `interval` seconds; rendering only reads that copy, so a frame never touches a cache.
 # Actions (empty, resize) call the locked public API and refresh immediately.
 
-using Cached: Cached, AbstractCache, cache_info, cache_stats, empty_caches!, set_cache_size!
+using Cached: Cached, AbstractCache, cache_info, cache_stats, set_cache_size!
 using Tachikoma: Tachikoma, Model, Frame, KeyEvent, Rect, Layout, Vertical, Fixed, Fill,
     split_layout, render, set_string!, set_char!, tstyle, center, right, Block, StatusBar, Span,
     Sparkline, TextInput, BARS_H, handle_key!, text, app
@@ -32,35 +32,20 @@ function recent(t::Trend)
     return h + m == 0 ? NaN : h / (h + m)
 end
 
-# A function (`cache === nothing`) with its sub-caches as `children`, or one sub-cache.
+# One global cache, as seen at the last refresh.
 struct Row
     f::Any
-    cache::Union{Nothing, AbstractCache}
-    label::String # the function, or the signature of the sub-cache
+    cache::AbstractCache
+    label::String # the function, as printed
     kind::String
     bytes::Bool
-    stats::STATS # summed over the children for a function
+    stats::STATS
     trend::Trend
-    children::Vector{Row}
 end
 
 hitrate(s) = (n = s.hits + s.misses; n == 0 ? NaN : s.hits / n)
 activity(r::Row) = isempty(r.trend.rates) ? 0.0 : r.trend.rates[end]
 fill_fraction(s, maxsize = s.maxsize) = maxsize == 0 ? 1.0 : s.currentsize / maxsize
-
-# `f(::A, ::B; k::C)::V` from a cache's key and value types. The key is the tuple of positional
-# arguments, followed by a `NamedTuple` of keywords when there are any (see `Cached._key`), so a
-# trailing positional `NamedTuple` argument is shown as keywords too.
-function signature(name::AbstractString, K::Type, V::Type)
-    K isa DataType && K <: Tuple || return "$name[$K]::$V"
-    args = collect(Any, fieldtypes(K))
-    kws = ""
-    if !isempty(args) && args[end] isa DataType && args[end] <: NamedTuple
-        kw = pop!(args)
-        kws = "; " * join(("$k::$T" for (k, T) in zip(fieldnames(kw), fieldtypes(kw))), ", ")
-    end
-    return string(name, "(", join(("::$T" for T in args), ", "), kws, ")::", V)
-end
 
 # Sort orders, by key on a `Row`; the last three are also the optional table columns.
 const SORTS = (
@@ -73,10 +58,9 @@ const SORTS = (
 @kwdef mutable struct Dashboard <: Model
     interval::Float64 = 1.0
     filter::String = ""
-    rows::Vector{Row} = Row[]                     # one per function, as read at the last refresh
-    lines::Vector{Pair{Row, String}} = Pair{Row, String}[] # shown rows => their text
-    trends::IdDict{Any, Trend} = IdDict{Any, Trend}() # by function or cache
-    collapsed::IdDict{Any, Bool} = IdDict{Any, Bool}()
+    rows::Vector{Row} = Row[]                     # every global cache, as read at the last refresh
+    lines::Vector{Row} = Row[]                    # filtered and sorted, as shown
+    trends::IdDict{AbstractCache, Trend} = IdDict{AbstractCache, Trend}()
     selected::Int = 0
     offset::Int = 0
     sortcol::Int = 1
@@ -97,73 +81,42 @@ function dashboard(; interval::Real = 1.0, filter::AbstractString = "")
     return nothing
 end
 
-selected(m::Dashboard) = (i = m.selected; 1 <= i <= length(m.lines) ? first(m.lines[i]) : nothing)
-_id(r::Row) = r.cache === nothing ? r.f : r.cache
-_current(r::Row) = r.cache === nothing ? first(r.children).stats.maxsize : r.stats.maxsize
+selected(m::Dashboard) = get(m.lines, m.selected, nothing)
 
 # --- refresh ---
 
 function refresh!(m::Dashboard, now = time())
     elapsed = now - m.lastrefresh
     m.lastrefresh = now
-    trends = IdDict{Any, Trend}()
-    caches = IdDict{Any, Vector{Row}}()
-    order = Any[]
-    for (f, c) in cache_info()
+    trends = IdDict{AbstractCache, Trend}()
+    m.rows = map(cache_info()) do (f, c)
         s = STATS(cache_stats(c))
         kind = c isa Cached.LRU ? "LRU" : c isa Cached.ClockCache ? "Clock" : string(nameof(typeof(c)))
-        trend = trend!(trends, m.trends, c, s, elapsed)
-        row = Row(f, c, signature(repr(f), keytype(c), valtype(c)), kind, c.by !== nothing, s, trend, Row[])
-        haskey(caches, f) || push!(order, f)
-        push!(get!(caches, f, Row[]), row)
-    end
-    m.rows = map(order) do f
-        children = caches[f]
-        s = reduce((a, b) -> STATS(map(+, a, b)), (c.stats for c in children))
-        kind = allequal(c.kind for c in children) ? first(children).kind : "mixed"
-        # a function's deltas are those of its caches, leaving out caches that are new
-        old = [last(c.trend.deltas) for c in children if haskey(m.trends, c.cache)]
-        delta = (sum(first, old; init = 0), sum(last, old; init = 0))
-        trend = trend!(trends, m.trends, f, s, elapsed, delta)
-        Row(f, nothing, repr(f), kind, first(children).bytes, s, trend, children)
+        Row(f, c, repr(f), kind, c.by !== nothing, s, trend!(trends, m.trends, c, s, elapsed))
     end
     m.trends = trends # drops the trends of caches that are gone
     return rebuild!(m)
 end
 
-function trend!(trends, old, id, s, elapsed, delta = nothing)
-    t = get(old, id, nothing)
+function trend!(trends, old, c, s, elapsed)
+    t = get(old, c, nothing)
     if t === nothing
         t = Trend(s.hits, s.misses, Tuple{Int, Int}[], Float64[])
     else
-        d = something(delta, (max(s.hits - t.hits, 0), max(s.misses - t.misses, 0)))
+        d = (max(s.hits - t.hits, 0), max(s.misses - t.misses, 0))
         push!(t.deltas, d)
         push!(t.rates, elapsed > 0 ? first(d) / elapsed : 0.0)
         length(t.deltas) > HISTORY && (popfirst!(t.deltas); popfirst!(t.rates))
         t.hits, t.misses = s.hits, s.misses
     end
-    return trends[id] = t
+    return trends[c] = t
 end
 
-# Filter, sort and flatten the tree into `lines`, keeping the selected row selected.
+# Filter and sort `rows` into `lines`, keeping the selected cache selected.
 function rebuild!(m::Dashboard)
     current = selected(m)
-    by = last(SORTS[m.sortcol])
-    m.lines = empty(m.lines)
-    for r in sort!(filter(r -> occursin(m.filter, r.label), m.rows); by, rev = m.reverse)
-        if length(r.children) == 1 # shown inline, as its signature
-            push!(m.lines, r => "  " * only(r.children).label)
-        elseif get(m.collapsed, r.f, false)
-            push!(m.lines, r => "▸ $(r.label) ($(length(r.children)) caches)")
-        else
-            push!(m.lines, r => "▾ $(r.label)")
-            children = sort(r.children; by, rev = m.reverse)
-            for (i, c) in enumerate(children)
-                push!(m.lines, c => (i == length(children) ? "  └ " : "  ├ ") * chopprefix(c.label, r.label))
-            end
-        end
-    end
-    i = current === nothing ? nothing : findfirst(l -> _id(first(l)) === _id(current), m.lines)
+    m.lines = sort!(filter(r -> occursin(m.filter, r.label), m.rows); by = last(SORTS[m.sortcol]), rev = m.reverse)
+    i = current === nothing ? nothing : findfirst(r -> r.cache === current.cache, m.lines)
     m.selected = clamp(something(i, m.selected), min(1, length(m.lines)), length(m.lines))
     return m
 end
@@ -194,26 +147,14 @@ function Tachikoma.update!(m::Dashboard, evt::KeyEvent)
         refresh!(m)
     elseif r === nothing
         nothing
-    elseif key in (:left, :right) || (key == :char && c == ' ')
-        fold!(m, r, key == :left ? true : key == :right ? false : nothing)
     elseif key == :enter
-        m.pending = _current(r)
+        m.pending = r.stats.maxsize
     elseif key == :char && c == 'e'
-        r.cache === nothing ? empty_caches!(r.f) : empty!(r.cache)
-        m.message = "emptied $(r.cache === nothing ? "all caches of " : "")$(r.label)"
+        empty!(r.cache)
+        m.message = "emptied $(r.label)"
         refresh!(m)
     end
     return nothing
-end
-
-# Collapse (`true`), expand (`false`) or toggle (`nothing`) the function of row `r`.
-function fold!(m::Dashboard, r::Row, collapse)
-    r.cache === nothing || collapse !== false || return m # → on a sub-cache does nothing
-    parent = r.cache === nothing ? r : m.rows[findfirst(p -> p.f === r.f, m.rows)]
-    length(parent.children) > 1 || return m
-    m.collapsed[parent.f] = something(collapse, !get(m.collapsed, parent.f, false))
-    m.selected = findfirst(l -> first(l) === parent, m.lines) # select the function
-    return rebuild!(m)
 end
 
 # Resize mode: ← → halve and double, [ ] step by 10%, Enter applies, Esc cancels.
@@ -235,16 +176,11 @@ function edit_size!(m::Dashboard, evt::KeyEvent)
     return nothing
 end
 
-# A sub-cache is resized on its own; a function gets a limit for its current and future caches,
-# in its current measure (`set_cache_size!` would discard the caches if `by` changed).
+# The limit is set for the function, so that it persists, in its current measure
+# (`set_cache_size!` would discard the cache if `by` changed).
 function resize_row!(m::Dashboard, r::Row, n::Int)
-    if r.cache === nothing
-        set_cache_size!(r.f, n; by = first(r.children).cache.by)
-        m.message = "set the limit of $(r.label) to $(_short(n, r.bytes))"
-    else
-        resize!(r.cache; maxsize = n)
-        m.message = "resized $(r.label) to $(_short(n, r.bytes))"
-    end
+    set_cache_size!(r.f, n; by = r.cache.by)
+    m.message = "set the limit of $(r.label) to $(_short(n, r.bytes))"
     return refresh!(m)
 end
 
@@ -276,9 +212,8 @@ function Tachikoma.view(m::Dashboard, f::Frame)
     header, body, info, status = split_layout(Layout(Vertical, [Fixed(1), Fill(), Fixed(detail), Fixed(1)]), area)
 
     entries = sum(r -> r.stats.length, m.rows; init = 0)
-    ncaches = sum(r -> length(r.children), m.rows; init = 0)
     filt = isempty(m.filter) ? "" : " · filter \"$(m.filter)\""
-    title = " $ncaches caches in $(length(m.rows)) functions, $entries entries$filt"
+    title = " $(length(m.rows)) caches, $entries entries$filt"
     set_string!(buf, header.x, header.y, title, tstyle(:title, bold = true); max_x = right(header))
 
     if isempty(m.lines)
@@ -310,7 +245,7 @@ function render_table(m::Dashboard, area::Rect, buf)
     columns = COLUMNS[1:k]
     # as wide as the longest label (over all lines, so that scrolling keeps the layout), and
     # any spare width is left at the right
-    longest = maximum(l -> textwidth(last(l)), m.lines; init = 0)
+    longest = maximum(r -> textwidth(r.label), m.lines; init = 0)
     namewidth = clamp(longest, MINNAME, area.width - 1 - sum(c -> c[2] + 1, columns; init = 0))
 
     sorted, arrow = first(SORTS[m.sortcol]), m.reverse ? " ▼" : " ▲"
@@ -323,12 +258,12 @@ function render_table(m::Dashboard, area::Rect, buf)
     height = area.height - 1
     # keep the selection visible, without blank rows below while rows above are hidden
     m.offset = clamp(m.offset, max(m.selected - height, 0), max(min(m.selected - 1, length(m.lines) - height), 0))
-    for (i, (r, label)) in enumerate(m.lines[(m.offset + 1):min(end, m.offset + height)])
+    for (i, r) in enumerate(m.lines[(m.offset + 1):min(end, m.offset + height)])
         y = area.y + i
         issel = m.offset + i == m.selected
-        style = issel ? tstyle(:accent, bold = true) : tstyle(:text; bold = r.cache === nothing && length(r.children) > 1)
+        style = issel ? tstyle(:accent, bold = true) : tstyle(:text)
         issel && set_char!(buf, area.x, y, '▌', style)
-        set_string!(buf, area.x + 1, y, _truncate(label, namewidth), style)
+        set_string!(buf, area.x + 1, y, _truncate(r.label, namewidth), style)
         x = area.x + namewidth + 2
         for (_, w, draw) in columns
             draw(buf, x, y, r, m)
@@ -359,8 +294,7 @@ end
 # The fill against the limit, or against the pending limit while resizing this row.
 function draw_size(buf, x, y, r::Row, m::Dashboard)
     resizing = m.pending !== nothing && selected(m) === r
-    # a function's limit applies to each of its caches
-    maxsize = resizing ? m.pending * max(length(r.children), 1) : r.stats.maxsize
+    maxsize = resizing ? m.pending : r.stats.maxsize
     frac = fill_fraction(r.stats, maxsize)
     style = resizing ? tstyle(:accent, bold = true) : tstyle(frac >= 0.9 ? :warning : :primary)
     bar!(buf, x, y, 8, frac, style)
@@ -374,9 +308,8 @@ function render_detail(r::Row, area::Rect, buf)
     s, t = r.stats, r.trend
     size = r.bytes ? "$(s.length) entries, $(_short(s.currentsize, true)) of $(_short(s.maxsize, true))" :
         "$(s.length) of $(s.maxsize) entries"
-    caches = length(r.children) > 1 ? "$(length(r.children)) caches · " : ""
     lines = (
-        "$caches$(r.kind) · $size · $(s.hits) hits · $(s.misses) misses",
+        "$(r.kind) · $size · $(s.hits) hits · $(s.misses) misses",
         "hit rate: recent $(_percent(recent(t))) · lifetime $(_percent(hitrate(s))) · $(round(activity(r); digits = 1)) hits/s",
     )
     for (i, line) in enumerate(lines)
@@ -386,7 +319,7 @@ function render_detail(r::Row, area::Rect, buf)
     return
 end
 
-const KEYS = "↑↓ select  ←→ fold  ⏎ resize  e empty  s sort  r reverse  / filter  q quit"
+const KEYS = "↑↓ select  ⏎ resize  e empty  s sort  r reverse  / filter  q quit"
 const RESIZEKEYS = "←→ ½ ×2  [ ] ±10%  ⏎ apply  Esc cancel"
 
 function render_status(m::Dashboard, area::Rect, buf)
@@ -394,8 +327,8 @@ function render_status(m::Dashboard, area::Rect, buf)
     if m.input !== nothing
         render(m.input, area, buf)
     elseif m.pending !== nothing && r !== nothing
-        change = " $(_short(_current(r), r.bytes)) → $(_short(m.pending, r.bytes)) "
-        what = r.cache === nothing ? " each cache of $(r.label) " : " $(r.label) "
+        change = " $(_short(r.stats.maxsize, r.bytes)) → $(_short(m.pending, r.bytes)) "
+        what = " $(r.label) "
         left = [Span(change, tstyle(:accent, bold = true)), Span(what, tstyle(:text)), Span(" $RESIZEKEYS", tstyle(:text_dim))]
         render(StatusBar(; left), area, buf)
     else
@@ -410,7 +343,7 @@ end
 
 _percent(x) = isnan(x) ? "-" : string(round(100x; digits = 1), "%")
 
-# At most `w` characters, cutting the middle so that both ends of a signature stay visible.
+# At most `w` characters, cutting the middle so that both ends of a name stay visible.
 function _truncate(s::AbstractString, w::Integer)
     length(s) <= w && return s
     w <= 1 && return first(s, max(w, 0))

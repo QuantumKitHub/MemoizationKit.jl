@@ -48,8 +48,8 @@ end
 """
     cache_dashboard(; interval = 1.0, filter = "")
 
-Open an interactive terminal dashboard of the global caches: a tree of functions and their
-caches, with live hit rates and sizes, from which caches can be emptied or resized. The
+Open an interactive terminal dashboard of the global caches: one row per function, with
+live hit rates and sizes, from which caches can be emptied or resized. The
 statistics are re-read every `interval` seconds, and only functions whose name contains
 `filter` are shown.
 

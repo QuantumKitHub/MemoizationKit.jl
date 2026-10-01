@@ -14,8 +14,11 @@ const Ext = Base.get_extension(Cached, :CachedTachikomaExt)
 # unique names, as other test files may share this process and its global caches
 @cached dash_square(x) = x^2
 @cached dash_bytes(n::Int)::Vector{Float64} = zeros(n)
-@cached dash_kw(s::Symbol; upper::Bool = false)::String = upper ? uppercase(string(s)) : string(s)
 @cached dash_late(x) = x
+@cached dash_lru(x) = x
+Cached.CacheStyle(::typeof(dash_lru), x) = GlobalLRUCache()
+@cached dash_two(x) = x # one cache per container type
+Cached.CacheStyle(::typeof(dash_two), ::Int) = GlobalLRUCache()
 
 function draw(m; width = 120, height = 24)
     tb = TestBackend(width, height)
@@ -26,7 +29,7 @@ press(m, keys...) = foreach(k -> Tachikoma.update!(m, KeyEvent(k)), keys)
 line(tb, text) = (p = find_text(tb, text); p === nothing ? "" : row_text(tb, p.y))
 # screen column of `text` (`find_text` gives a string index)
 column(tb, text) = (p = find_text(tb, text); textwidth(row_text(tb, p.y)[1:(p.x - 1)]) + 1)
-select!(m, id) = (m.selected = findfirst(l -> Ext._id(first(l)) === id, m.lines); m)
+select!(m, f) = (m.selected = findfirst(r -> r.f === f, m.lines); m)
 function dashboard(filter)
     m = Ext.Dashboard(; interval = Inf, filter)
     Ext.refresh!(m)
@@ -37,70 +40,60 @@ foreach(dash_square, (1, 2, 3, 1, 2, 1.0))
 set_cache_size!(dash_bytes, 10^6; by = Cached.cachesize)
 dash_bytes(10);
 dash_bytes(10);
-dash_kw(:a; upper = true)
+dash_lru(1)
+dash_two(1)
+dash_two(1.0)
 
-@testset "signatures and formatting" begin
-    @test Ext.signature("f", Tuple{Int, Float64}, String) == "f(::$Int, ::Float64)::String"
-    @test Ext.signature("f", Tuple{}, Int) == "f()::$Int"
-    @test Ext.signature("f", Tuple{Symbol, @NamedTuple{upper::Bool}}, String) == "f(::Symbol; upper::Bool)::String"
+@testset "formatting" begin
     @test Ext._truncate("abcdefghij", 7) == "abcd…ij"
     @test Ext._truncate("abc", 7) == "abc"
     @test Ext._short(216, false) == "216" && Ext._short(10_000, false) == "10k" && Ext._short(1234, false) == "1.2k"
     @test Ext._short(1023, true) == "1023B" && Ext._short(1024^2, true) == "1.0MiB" && Ext._short(64 * 1024^3, true) == "64GiB"
 end
 
-@testset "tree of functions and their caches" begin
+@testset "one row per cache" begin
     m = dashboard("dash_")
-    square = only(r for r in m.rows if r.f === dash_square)
-    @test length(square.children) == 2
+    square = only(r for r in m.lines if r.f === dash_square)
     @test (square.stats.hits, square.stats.misses, square.stats.length) == (2, 4, 4)
-    @test square.stats.maxsize == sum(c -> c.stats.maxsize, square.children)
+    @test square.label == repr(dash_square)
 
     tb = draw(m; width = 160) # names are qualified by the test module
-    @test find_text(tb, "▾ $(repr(dash_square))") !== nothing
-    @test find_text(tb, "(::Float64)::Float64") !== nothing
+    @test occursin("Clock", line(tb, repr(dash_square)))
+    @test occursin("LRU", line(tb, repr(dash_lru)))
+    # a function with caches of two container types has a row for each
+    two = filter(r -> r.f === dash_two, m.lines)
+    @test length(two) == 2 && Set(r.kind for r in two) == Set(["LRU", "Clock"])
+    @test occursin(r"\d+B/977KiB", line(tb, repr(dash_bytes)))
+    @test find_text(tb, "Activity") !== nothing && find_text(tb, "q quit") !== nothing
     # no recent lookups yet; the lifetime rate is in the detail panel
-    @test occursin(r"···  +- ", line(tb, "▾ $(repr(dash_square))"))
+    @test occursin(r"···  +- ", line(tb, repr(dash_square)))
     select!(m, dash_square)
     @test find_text(draw(m; width = 160), "lifetime 33.3%") !== nothing # 2 hits, 4 misses
-    @test occursin("(::Symbol; upper::Bool)::String", line(tb, "dash_kw"))
-    @test occursin(r"\d+B/977KiB", line(tb, "dash_bytes"))
-    @test find_text(tb, "Activity") !== nothing && find_text(tb, "q quit") !== nothing
 
-    # fold with ← → and Space; ← on a sub-cache folds its function
-    n = length(m.lines)
-    select!(m, dash_square)
-    press(m, :left)
-    @test length(m.lines) == n - 2 && Ext.selected(m).f === dash_square
-    @test find_text(draw(m), "▸ $(repr(dash_square)) (2 caches)") !== nothing
-    press(m, :right)
-    @test length(m.lines) == n
-    press(m, ' ')
-    @test length(m.lines) == n - 2
-    press(m, ' ')
-    child = first(square.children).cache
-    select!(m, child)
-    press(m, :right) # nothing to expand
-    @test Ext.selected(m).cache === child
-    press(m, :left)
-    @test length(m.lines) == n - 2 && Ext.selected(m).f === dash_square
-    press(m, :right)
+    # the name column is as wide as the longest name, with spare width at the right
+    longest = maximum(r -> textwidth(r.label), m.lines)
+    @test column(tb, "Name") == 2
+    @test column(tb, "Hit rate") == 1 + 1 + max(longest, 20) + 1
+    @test column(tb, "Size") == column(tb, "Hit rate") + 14
+    tb = draw(m; width = 50)
+    @test column(tb, "Hit rate") == 1 + 1 + clamp(longest, 20, 50 - 1 - 14) + 1
+    longest > 35 && @test find_text(tb, "…") !== nothing
 
     # sorting by recent hit rate, descending: dash_bytes (100%) before dash_square (50%)
     dash_bytes(10)
     dash_square(1)
     dash_square(7)
     Ext.refresh!(m, m.lastrefresh + 1)
-    @test occursin("50%", line(draw(m; width = 160), "▾ $(repr(dash_square))"))
+    @test occursin("50%", line(draw(m; width = 160), repr(dash_square)))
     press(m, 's', 'r')
     @test first(Ext.SORTS[m.sortcol]) == "Hit rate"
-    @test findfirst(l -> first(l).f === dash_bytes, m.lines) < findfirst(l -> first(l).f === dash_square, m.lines)
+    @test findfirst(r -> r.f === dash_bytes, m.lines) < findfirst(r -> r.f === dash_square, m.lines)
     press(m, 's', 's', 's', 'r')
     @test m.sortcol == 1 && !m.reverse
 
     # filter through the input line
-    press(m, '/', ntuple(_ -> :backspace, 10)..., 'k', 'w', :enter)
-    @test m.filter == "kw" && length(m.lines) == 1
+    press(m, '/', ntuple(_ -> :backspace, 10)..., 'l', 'r', 'u', :enter)
+    @test m.filter == "lru" && length(m.lines) == 1
     press(m, 'q')
     @test Tachikoma.should_quit(m)
 end
@@ -108,7 +101,7 @@ end
 @testset "empty state and small terminals" begin
     m = Ext.Dashboard(; interval = Inf, lastrefresh = time())
     @test find_text(draw(m), "No global caches yet") !== nothing
-    press(m, :down, :enter, 'e', :left, ' ', :end_key) # no selection: nothing happens
+    press(m, :down, :enter, 'e', :end_key) # no selection: nothing happens
     @test m.pending === nothing && !m.quit
 
     @test find_text(draw(dashboard("no such function")), "No caches match") !== nothing
@@ -123,7 +116,6 @@ end
     tb = draw(m; width = 40, height = 8)
     @test find_text(tb, "too small") === nothing && find_text(tb, "Hit rate") !== nothing
     @test find_text(tb, "Size") === nothing
-    @test find_text(draw(m; width = 65, height = 15), "Size") !== nothing
     @test find_text(draw(m; width = 60, height = 15), "Size") !== nothing
     @test find_text(draw(m; width = 60, height = 15), "Kind") === nothing
     @test find_text(draw(m; width = 65, height = 15), "Kind") !== nothing
@@ -133,38 +125,8 @@ end
     @test find_text(draw(m; width = 80, height = 16), "hits/s") !== nothing
 end
 
-@cached dash_mixed(x) = x
-Cached.CacheStyle(::typeof(dash_mixed), ::Int) = GlobalLRUCache()
-
-@testset "name width and kind column" begin
-    dash_mixed(1)
-    dash_mixed(1.0)
-    m = dashboard("dash_")
-    longest = maximum(l -> textwidth(last(l)), m.lines)
-    @test longest > 20
-    tb = draw(m; width = 160)
-    # the columns follow the longest name, and the spare width is left at the right
-    @test column(tb, "Name") == 2
-    @test column(tb, "Hit rate") == 1 + 1 + longest + 1
-    @test column(tb, "Size") == column(tb, "Hit rate") + 14
-    @test textwidth(rstrip(line(tb, "Activity"))) < 160 - 20
-
-    # kinds, and `mixed` for a function whose caches differ
-    @test occursin("Clock", line(tb, "▾ $(repr(dash_square))"))
-    @test occursin("mixed", line(tb, "▾ $(repr(dash_mixed))"))
-    @test occursin("LRU", line(tb, "(::$Int)::$Int"))
-    m.collapsed[dash_mixed] = true
-    Ext.rebuild!(m)
-    @test occursin("mixed", line(draw(m; width = 160), "▸ $(repr(dash_mixed)) (2 caches)"))
-
-    # labels that do not fit are still cut in the middle
-    tb = draw(m; width = 60)
-    @test column(tb, "Hit rate") == 1 + 1 + (60 - 1 - 14 - 23) + 1
-    @test find_text(tb, "…") !== nothing
-end
-
-@cached dash_many(x) = x
-foreach(dash_many, (1, 1.0, :a, "a", 'a', Int8(1))) # six caches: more rows than fit at 40×8
+const many = [@eval(@cached $(Symbol(:dash_many, i))(x) = x) for i in 1:7]
+foreach(f -> f(1), many)
 
 @testset "scrolling back when the terminal grows" begin
     m = dashboard("dash_many")
@@ -178,19 +140,12 @@ end
 
 @testset "empty and resize through key events" begin
     m = dashboard("dash_square")
-    a, b = (c.cache for c in first(first(m.lines)).children)
-
-    # a sub-cache, then all caches of the function
-    select!(m, a)
+    c = only(m.lines).cache
     press(m, 'e')
-    @test isempty(a) && !isempty(b)
+    @test isempty(c)
     @test occursin("dash_square", line(draw(m), "emptied"))
-    select!(m, dash_square)
-    press(m, 'e')
-    @test isempty(a) && isempty(b)
 
-    select!(m, a)
-    old = Cached.cache_stats(a).maxsize
+    old = Cached.cache_stats(c).maxsize
     press(m, :enter)
     @test m.pending == old
     press(m, :right, :right, :left)
@@ -199,22 +154,18 @@ end
     press(m, ']')
     @test m.pending == 2old + round(Int, 2old / 10)
     press(m, :escape)
-    @test m.pending === nothing && Cached.cache_stats(a).maxsize == old && !m.quit
-    press(m, :enter, :left, :enter)
-    @test Cached.cache_stats(a).maxsize == old ÷ 2 && Cached.cache_stats(b).maxsize == old
-
-    # a function: all its caches, current and future
-    select!(m, dash_square)
-    press(m, :enter, '[', :enter)
-    n = Cached.cache_stats(a).maxsize
-    @test n < old ÷ 2 && Cached.cache_stats(b).maxsize == n
-    dash_square(Int8(1))
-    @test all(p -> Cached.cache_stats(last(p)).maxsize == n, cache_info(dash_square))
+    @test m.pending === nothing && Cached.cache_stats(c).maxsize == old && !m.quit
+    press(m, :enter, :left, '[', :enter)
+    n = old ÷ 2 - round(Int, (old ÷ 2) / 10)
+    @test Cached.cache_stats(c).maxsize == n
+    @test occursin("dash_square", line(draw(m), "set the limit"))
+    # the limit is the function's (set with `set_cache_size!`), so it persists
+    @test Cached.REGISTRY.functions[dash_square].maxsize == n
 end
 
-@testset "resizing a byte-measured function keeps its caches" begin
+@testset "resizing a byte-measured function keeps its cache" begin
     m = dashboard("dash_bytes")
-    c = only(first(only(m.lines)).children).cache
+    c = only(m.lines).cache
     @test c.by !== nothing && length(c) == 1
     press(m, :enter, :right, :enter)
     @test only(cache_info(dash_bytes)).second === c # not discarded
@@ -227,23 +178,17 @@ end
     @test isempty(m.lines)
     dash_late(1)
     tb = draw(m)
-    @test length(m.lines) == 1 && find_text(tb, "dash_late(::$Int)::$Int") !== nothing
-    dash_late(1.0)
-    draw(m)
-    @test length(m.lines) == 3 # the function and its two caches
-
+    @test length(m.lines) == 1 && find_text(tb, repr(dash_late)) !== nothing
     Ext.refresh!(m, m.lastrefresh + 1)
     foreach(_ -> dash_late(1), 1:4)
     Ext.refresh!(m, m.lastrefresh + 2)
-    late = first(first(m.lines))
+    late = only(m.lines)
     @test late.trend.rates[end] ≈ 2.0 && Ext.recent(late.trend) == 1.0
-    int = only(c for c in late.children if keytype(c.cache) == Tuple{Int})
-    @test int.trend.rates[end] ≈ 2.0
 
-    # caches that disappear are dropped
-    set_max_subcaches!(dash_late, 1)
+    # caches that disappear are dropped, with their trends
+    set_cache_size!(dash_late, 10; by = Cached.cachesize) # discards the cache
     Ext.refresh!(m)
-    @test length(m.lines) == 1 && !haskey(m.trends, int.cache)
+    @test isempty(m.lines) && !haskey(m.trends, late.cache)
     @test draw(m) isa TestBackend
 end
 
@@ -252,14 +197,13 @@ end
 @testset "recent hit rate" begin
     m = Ext.Dashboard(; interval = Inf, filter = "dash_rate")
     dash_rate(1)
-    dash_rate(1.0)
     t = 0.0
     misses = Ref(10)
-    function step!(hits, nmisses; key = 1)
-        foreach(_ -> dash_rate(key), 1:hits)
-        foreach(_ -> dash_rate(key isa Int ? (misses[] += 1) : float(misses[] += 1)), 1:nmisses)
+    function step!(hits, nmisses)
+        foreach(_ -> dash_rate(1), 1:hits)
+        foreach(_ -> dash_rate(misses[] += 1), 1:nmisses)
         Ext.refresh!(m, t += 1)
-        return only(r for r in m.rows if r.f === dash_rate)
+        return only(m.lines)
     end
     rate(r) = Ext.recent(r.trend)
     Ext.refresh!(m, t)
@@ -267,7 +211,7 @@ end
         step!(100, 0)
     end
     r = step!(0, 0)
-    @test rate(r) == 1.0 && occursin("100%", line(draw(m), "▾ $(repr(dash_rate))"))
+    @test rate(r) == 1.0 && occursin("100%", line(draw(m), repr(dash_rate)))
 
     # a burst of misses shows up straight away, and fully within a window
     r = step!(0, 400)
@@ -276,9 +220,8 @@ end
         r = step!(0, 10)
     end
     @test rate(r) == 0.0
-    @test occursin("  0%", line(draw(m), "▾ $(repr(dash_rate))"))
-    tb = draw(m)
-    @test occursin("lifetime", line(tb, "hit rate: recent 0.0%"))
+    @test occursin("  0%", line(draw(m), repr(dash_rate)))
+    @test occursin("lifetime", line(draw(m), "hit rate: recent 0.0%"))
 
     # and recovers when hits resume
     for _ in 1:Ext.WINDOW
@@ -286,16 +229,9 @@ end
     end
     @test rate(r) == 1.0
 
-    # a function sums the deltas of its caches over the same window
-    r = step!(30, 10; key = 1.0)
-    ci, cf = (only(c for c in r.children if keytype(c.cache) == Tuple{T}) for T in (Int, Float64))
-    @test rate(cf) == 0.75
-    @test rate(ci) == 1.0
-    @test rate(r) ≈ (50 * (Ext.WINDOW - 1) + 30) / (50 * (Ext.WINDOW - 1) + 40)
-
     # without lookups in the window: `-`
     for _ in 1:Ext.WINDOW
         r = step!(0, 0)
     end
-    @test isnan(rate(r)) && occursin(r"···  +- ", line(draw(m), "▾ $(repr(dash_rate))"))
+    @test isnan(rate(r)) && occursin(r"···  +- ", line(draw(m), repr(dash_rate)))
 end
