@@ -41,7 +41,14 @@ julia --project=/tmp/runic -e 'using Pkg; Pkg.add("Runic"); using Runic; Runic.m
   the `CacheStyle` (`NoCache`, `GlobalCache{C}`, `TaskLocalCache{C}`).
 - `src/registry.jl`: global caches, one untyped `C{Any,Any}` per function (its budget), looked up
   lock-free in an atomically published `IdDict` snapshot.
-- `src/containers/`: `LRU` and `ClockCache`, sharing the `AbstractCache` interface.
+- `src/containers/`: `LRU` and `ClockCache`, sharing the `AbstractCache` interface. Keys are
+  stored as `Key{Any}` and probed with a concretely typed `Key{K}`, so hits never box.
+- `src/preferences.jl`: default settings from Preferences.jl, resolved once per function
+  (runtime > function > package > `[Cached]` > built-in), and `set_cache_preferences!`.
+- `src/api.jl`: `cache_info`, `empty_caches!`, `set_cache_size!`, and the `cache_dashboard`
+  stub with its error hint (registered in `__init__`).
+- `ext/CachedTachikomaExt.jl`: the dashboard. It renders from a copy of the statistics, refreshed
+  every `interval`; tests render it headlessly with Tachikoma's `TestBackend`.
 
 Hot-path invariants, checked by the tests: a cache hit is fully inferred and allocates nothing.
 Benchmark with `julia --project=benchmark -t 8 benchmark/containers.jl`.

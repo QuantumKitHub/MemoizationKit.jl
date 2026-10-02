@@ -10,7 +10,14 @@ projects = ["test", "docs", "benchmark"]
 ExprTools = "e2ba6199-217a-4e67-a87a-7c52f15ade04"
 Preferences = "21216c6a-2e73-6563-6e65-726566657250"
 
+[weakdeps]
+Tachikoma = "468859d6-42d8-48b7-8ad9-1d312e0e3b0a"
+
+[extensions]
+CachedTachikomaExt = "Tachikoma"
+
 [compat]
 ExprTools = "0.1"
 Preferences = "1.4"
+Tachikoma = "2.7"
 julia = "1.10"
