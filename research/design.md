@@ -125,10 +125,15 @@ Decided on 2026-10-01: per package **and** per function, through Preferences.jl.
 
 ## Hooks and extensions
 
-- **Instrumentation hook**: lookups and misses go through `Cached.instrument(f, phase, thunk)`, which by default is just `thunk()`.
-  - A compile-time Preference switch removes the hook entirely when it is off.
-  - `CachedTimerOutputsExt` implements the hook with TimerOutputs, which replaces TensorKit's `@timeit_debug` sections.
-  - Packages label their functions by overriding `Cached.instrument_label(f, phase)`.
+- **Timing** (`CachedTimerOutputsExt`): `enable_cache_timers!(M, timer = get_defaulttimer())` and `disable_cache_timers!(M)`. The user-facing description is `docs/src/timing.md`.
+  - Internally, calls go through `instrument(f, ::Val{phase}, thunk, ::Val{owner})`, `@inline`, default `thunk()`: it compiles away, with no load and no branch, and hits stay at 0 allocations. It is not a public extension point; only the TimerOutputs extension adds methods.
+  - Two nested phases, after TensorKit's `@timeit_debug` sections: `:lookup` wraps the whole `get!` of a global or task-local cache, `:compute` wraps the `implementation` call (nested in `:lookup` on a miss, alone under `NoCache`). `uncached` is not instrumented.
+  - `owner` is `fullname` of the package owning `f` (`parentmodule(typeof(f))`, walked up to the package root; modules outside packages own their functions themselves), folded at compile time by a `@generated` function. Enabling a package covers its submodules, and enabling TensorKitSectors times the `@cached Fsymbol` methods of SUNRepresentations too.
+  - Timing is a debugging feature and may recompile, like TimerOutputs' `enable_debug_timings(mod)`. A runtime switch (a `Ref`) cost a load and a branch on every call, and was dropped.
+  - `enable_cache_timers!` evals `instrument(f, phase, thunk, ::Val{owner}) = timeit(thunk, timer, instrument_label(f, phase))` into the extension module, invalidating only the callers of functions owned by that package. `disable_cache_timers!` deletes it with `Base.delete_method`, after which the callers recompile to the default (verified on 1.10 and 1.13: hits inferred, 0 allocations). Deleting a method that overwrote another revives the old one, so enabling again deletes the previous method first. Refuses to run during precompilation. Labels come from the public `Cached.instrument_label(f, ::Val{phase})`, `"lookup f"`/`"compute f"` by default.
+  - `f::F` static parameters in `call.jl` keep Julia specializing on `f`, otherwise the closures box it. The owner is computed in `_call`, outside the closures: computing it inside made Julia 1.10, and only 1.10, box the closure and key (32 B per hit) in the first caller compiled that inlines the hit.
+  - World age: the new method is seen from the next top-level statement on, or through `invokelatest`.
+  - Without TimerOutputs, calling either function gives a `MethodError` with an error hint, like `cache_dashboard`.
 - **`CachedTachikomaExt`**: a TUI for browsing caches, watching hit rates live, resizing, and emptying. Implemented as `cache_dashboard()`; the user-facing description is `docs/src/dashboard.md`.
   - One row per cache, with Tachikoma `Gauge`s for the recent hit rate (last 10 refreshes) and the size against the limit, the container kind, and an activity sparkline.
   - Resizing calls `set_cache_size!` with the function's current measure.

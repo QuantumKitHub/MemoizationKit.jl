@@ -58,11 +58,47 @@ first, with `using Tachikoma`. See [Dashboard](@ref) for the keybindings.
 """
 function cache_dashboard end
 
-# Without the extension `cache_dashboard` has no methods; say how to get them. Calls with
+"""
+    enable_cache_timers!(M::Module, timer::TimerOutput = TimerOutputs.get_defaulttimer())
+
+Record the time spent in the cached functions owned by the package `M`, or any of its
+submodules, in `timer`: a section per function and phase, the lookup (hit or miss) with the
+computation of a miss nested in it, labelled by [`Cached.instrument_label`](@ref). This
+includes methods of these functions cached in other packages. Modules outside packages, such
+as those defined in the REPL, count separately. Enabling `M` again replaces its timer;
+[`disable_cache_timers!`](@ref) stops.
+
+Enabling and disabling define and delete a method of an internal hook, so they recompile the callers of the functions of `M`, and only take effect for code that starts
+afterwards (from the next top-level statement on, or through `invokelatest`). They cannot be
+used during precompilation.
+
+This is a package extension: load [TimerOutputs.jl](https://github.com/KristofferC/TimerOutputs.jl)
+first, with `using TimerOutputs`. See [Timing](@ref) for the details.
+"""
+function enable_cache_timers! end
+
+"""
+    disable_cache_timers!(M::Module)
+
+Stop timing the cached functions owned by `M`, started by [`enable_cache_timers!`](@ref).
+Their calls recompile without the timers, at no cost again.
+"""
+function disable_cache_timers! end
+
+# Functions whose methods come from a package extension, with the package to load.
+const EXTENSIONS = (
+    cache_dashboard => (:CachedTachikomaExt, "Tachikoma"),
+    enable_cache_timers! => (:CachedTimerOutputsExt, "TimerOutputs"),
+    disable_cache_timers! => (:CachedTimerOutputsExt, "TimerOutputs"),
+)
+
+# Without the extension these functions have no methods; say how to get them. Calls with
 # keywords fail on `Core.kwcall`, with the function as the second argument.
-function _dashboard_hint(io, exc, argtypes, kwargs)
+function _extension_hint(io, exc, argtypes, kwargs)
     f = exc.f === Core.kwcall && length(exc.args) >= 2 ? exc.args[2] : exc.f
-    f === cache_dashboard && Base.get_extension(@__MODULE__, :CachedTachikomaExt) === nothing &&
-        print(io, "\n`cache_dashboard` needs Tachikoma.jl: run `using Tachikoma` first.")
+    for (g, (ext, pkg)) in EXTENSIONS
+        f === g && Base.get_extension(@__MODULE__, ext) === nothing &&
+            print(io, "\n`$(nameof(g))` needs $pkg.jl: run `using $pkg` first.")
+    end
     return nothing
 end
