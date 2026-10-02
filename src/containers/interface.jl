@@ -133,6 +133,8 @@ Base.isempty(c::AbstractCache) = @lock c.lock isempty(c.index)
 
 # Iteration walks a snapshot copied under the lock, so it is safe while other tasks use the
 # cache (holding the lock across `iterate` calls would deadlock on an early `break`).
+# The length may change between `length` and `iterate`, so `collect` must not rely on it.
+Base.IteratorSize(::Type{<:AbstractCache}) = Base.SizeUnknown()
 function Base.iterate(c::AbstractCache)
     snapshot = @lock c.lock _pairs(c)
     return iterate(c, (snapshot, 1))
