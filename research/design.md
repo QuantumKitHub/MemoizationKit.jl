@@ -77,18 +77,20 @@ Cached provides its own containers, so it no longer depends on LRUCache.jl.
 Both implement the same small interface: `get!`, `get`, `haskey`, `empty!`, `resize!`, `length`, and hit/miss statistics.
 
 - **`LRU{K,V}`** is array-backed. It uses a `Dict` index, slots stored in vectors, and `prev`/`next` stored as integer vectors. Nodes are never allocated, and eviction is exact LRU.
-- **The index is a `Dict{Key{Any},Int}`.** Each stored `Key{Any}` holds the key and its hash. Lookups probe it with a concretely typed `Key{K}`, whose `isequal` checks `s.key isa K` before comparing, so the comparison is static and the key is never boxed. A `Key{Any}` cannot serve as the probe: storing the key in an `Any` field boxes it (96 B per lookup on TensorKit-like keys).
+- **The index of `LRU` is a `Dict{Key{Any},Int}`.** Each stored `Key{Any}` holds the key and its hash. Lookups probe it with a concretely typed `Key{K}`, whose `isequal` checks `s.key isa K` before comparing, so the comparison is static and the key is never boxed. A `Key{Any}` cannot serve as the probe: storing the key in an `Any` field boxes it (96 B per lookup on TensorKit-like keys).
   - This holds for `C{Any,Any}` as well, where a plain `Dict{Any,…}` would allocate on every hit.
   - Eviction never re-hashes, because the hash is stored.
   - Keys of different types are different entries, even when `isequal` (`f(3)` and `f(3.0)`). Lookups on a typed cache convert the key to `K` first.
-- **`ClockCache{K,V}`** uses second-chance eviction: a ring of slots with a reference bit. A hit only sets the bit and never reorders the ring, which makes it cheap for read-heavy shared caches.
-- Each container takes a size limit, either a **count** or **bytes** measured by a `by` function. Each one holds its own lock. Task-local containers skip the lock.
+- **`ClockCache{K,V}`** uses second-chance eviction: a ring of entries with a reference bit. A hit only sets the bit (if it is clear) and never reorders the ring, so **hits take no lock** (see `lockfree-clock.md`).
+  - Its index is a fixed-size open-addressing table of immutable entries (each holding the key as `Any` with its hash, probed with a `Key{K}` as above), replaced as a whole when it fills up and published atomically. Readers load it and its slots with acquire ordering; every mutation (miss, insertion, eviction, `delete!`, `resize!`, `empty!`) still takes the lock.
+  - Hits and misses are counted per thread, in separate cache lines, so hits write no shared memory.
+  - A lookup racing with a removal may return the removed entry; the value always belongs to its key.
+- Each container takes a size limit, either a **count** or **bytes** measured by a `by` function, and holds its own lock.
+- **Task-local caches** of the default container use `LocalClockCache`, an internal `ClockCache` with the `Dict` index above and locked hits (uncontended, so cheap), which saves the per-thread counters (64 B per thread) in every task's cache. It evicts in the same order.
 - **Default for `GlobalCache`: `ClockCache`.**
-  - On synthetic workloads (`benchmark/containers.jl`), it beat `LRU` everywhere single-threaded (28 vs 32 ns for an all-hit lookup) and had a slightly better hit rate under Zipf access. Both were 1.5–3× faster than LRUCache.jl.
-  - On the TensorKit and SUNRepresentations integration, the two were indistinguishable.
-  - It stays the default because a hit only sets a bit, which makes lock-free hits possible.
-- **open**: contention. With 8 threads, every container's per-lookup cost *rises* (all hits: about 50–75 ns, against 28–32 ns single-threaded), because every lookup takes the cache's single lock.
-  Sharding by key hash, or lock-free reads for `ClockCache`, are the candidate fixes. `TaskLocalCache` is the workaround meanwhile.
+  - On synthetic workloads (`benchmark/containers.jl`), the locked `ClockCache` beat `LRU` everywhere single-threaded (28 vs 32 ns for an all-hit lookup) and had a slightly better hit rate under Zipf access. Both were 1.5–3× faster than LRUCache.jl. On the TensorKit and SUNRepresentations integration, the two were indistinguishable.
+  - With lock-free hits it is about 2× faster again single-threaded (14 vs 31 ns, `Int` keys), and shared hits scale: about 25 ns at 8 threads, against about 500 ns with a lock (`benchmark/contention.jl`). That is faster than task-local caches.
+- **open**: contended misses. Misses still serialize on the cache's lock, so miss-heavy shared workloads (all threads computing new keys) scale poorly; `TaskLocalCache` or a sharded cache would help there (see `lockfree-clock.md`). `LRU` hits still take the lock.
 
 ## Limits
 

@@ -18,6 +18,7 @@ using Preferences: @load_preference, load_preference, has_preference, set_prefer
 include("containers/interface.jl")
 include("containers/lru.jl")
 include("containers/clock.jl")
+include("containers/localclock.jl")
 
 include("registry.jl")
 include("preferences.jl")

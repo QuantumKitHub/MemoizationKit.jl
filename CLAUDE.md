@@ -44,7 +44,11 @@ julia --project=/tmp/runic -e 'using Pkg; Pkg.add("Runic"); using Runic; Runic.m
 - `src/registry.jl`: global caches, one untyped `C{Any,Any}` per function (its budget), looked up
   lock-free in an atomically published `IdDict` snapshot.
 - `src/containers/`: `LRU` and `ClockCache`, sharing the `AbstractCache` interface. Keys are
-  stored as `Key{Any}` and probed with a concretely typed `Key{K}`, so hits never box.
+  stored as `Key{Any}` (or `Any` plus hash) and probed with a concretely typed `Key{K}`, so hits
+  never box. `LRU` takes its lock for every operation; `ClockCache` (`clock.jl`) has lock-free
+  hits, through an atomically published open-addressing table of immutable entries, and keeps
+  the three invariants listed in its source (`research/lockfree-clock.md`). Task-local caches
+  use `LocalClockCache` (`localclock.jl`), the locked `ClockCache`, via `_localtype` in `call.jl`.
 - `src/preferences.jl`: default settings from Preferences.jl, resolved once per function
   (runtime > function > package > `[Cached]` > built-in), and `set_cache_preferences!`.
 - `src/api.jl`: `cache_info`, `empty_caches!`, `set_cache_size!`, and the `cache_dashboard` and

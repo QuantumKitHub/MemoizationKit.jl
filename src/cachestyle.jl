@@ -54,7 +54,9 @@ Strategy that stores results in caches local to the current task, of container t
 `C` is either an `AbstractCache` or an `AbstractDict` type such as `Dict`; if it is not
 already concrete, it is completed to `C{K, V}`. Without `C`, the container is the one set by
 the `container` preference. Task-local caches need no locking but are not shared, not bounded
-unless `C` is, and are not visible to [`cache_info`](@ref).
+unless `C` is, and are not visible to [`cache_info`](@ref). `TaskLocalCache{ClockCache}` uses
+an internal variant of [`ClockCache`](@ref) whose hits take the lock, which costs nothing
+uncontended and saves the memory of the per-thread counters.
 """
 struct TaskLocalCache{C} <: CacheStyle end
 

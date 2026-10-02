@@ -69,7 +69,10 @@ end
 
 # One untyped cache per function for the containers of Cached; other dictionaries (e.g. `Dict`)
 # would box untyped keys, so they get one typed dictionary per key and value type.
-_localtype(C, K, V) = C isa UnionAll ? (C <: AbstractCache ? C{Any, Any} : C{K, V}) : C
+_localtype(C, K, V) = C isa UnionAll ? (C <: AbstractCache ? _localcache(C){Any, Any} : C{K, V}) : C
+# A task-local cache is used by one task only, so lock-free hits gain nothing there, while the
+# per-thread counters of `ClockCache` would cost memory in every task.
+_localcache(C) = C === ClockCache ? LocalClockCache : C
 # Task-local caches follow the size settings of `f`, but are not registered.
 function _newlocal(f, ::Type{T}) where {T <: AbstractCache}
     fc = @lock REGISTRY.lock _functioncaches!(f)

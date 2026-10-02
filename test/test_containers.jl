@@ -1,8 +1,8 @@
 using Test
 using Cached
-using Cached: AbstractCache, cache_stats
+using Cached: AbstractCache, cache_stats, LocalClockCache
 
-const CACHETYPES = (LRU, ClockCache)
+const CACHETYPES = (LRU, ClockCache, LocalClockCache)
 
 @testset "$C: basic interface" for C in CACHETYPES
     c = C{Int, String}(; maxsize = 3)
@@ -56,8 +56,8 @@ end
     @test first.(collect(c)) == [4, 1, 3] # iteration is most to least recent
 end
 
-@testset "ClockCache: second chance" begin
-    c = ClockCache{Int, Int}(; maxsize = 3)
+@testset "$C: second chance" for C in (ClockCache, LocalClockCache)
+    c = C{Int, Int}(; maxsize = 3)
     for i in 1:3
         c[i] = i
     end

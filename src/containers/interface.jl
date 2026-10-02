@@ -12,9 +12,12 @@ Keys of different types never match, even when they are `isequal`: in a cache wi
 abstract key type, `1` and `1.0` are different entries. Lookups with a key that is not of type
 `K` convert it to `K` first.
 
-Subtypes provide the fields `index::Dict{Key{Any},Int}`, `keys::Vector{Key{Any}}`, `vals`,
-`sizes`, `currentsize`, `maxsize`, `by`, `hits`, `misses` and `lock`, and implement the eviction
-policy through `_touch!`, `_evict_one!`, `_place!` and `_remove!`.
+The default methods, used by `LRU` (and the task-local `ClockCache`), take the lock for every
+operation. They need the fields `index::Dict{Key{Any},Int}`, `keys::Vector{Key{Any}}`, `vals`,
+`sizes`, `currentsize`, `maxsize`, `by`, `hits`, `misses` and `lock`, and the eviction policy
+through `_touch!`, `_evict_one!`, `_place!` and `_remove!`. `ClockCache` implements `_get!`
+and the other lookups and mutations itself, for lock-free hits; it shares `get!`, `show` and
+iteration, through the fields `by` and `lock`, `cache_stats` and `_pairs`.
 """
 abstract type AbstractCache{K, V} <: AbstractDict{K, V} end
 
@@ -35,16 +38,19 @@ Base.isequal(a::Key{Any}, b::Key{Any}) = a.hash == b.hash && typeof(a.key) === t
 # The probe for a key that is inserted: converted to `K`, which throws if that is not possible.
 _newkey(::AbstractCache{K}, key) where {K} = Key(key isa K ? key : convert(K, key)::K)
 
-# The slot of `key` in `c`, or 0. A key that cannot be converted to `K` is not in the cache.
-function _slot(c::AbstractCache{K}, key) where {K}
-    key isa K && return get(c.index, Key(key), 0)
+# The probe for `key`, or `nothing` if it cannot be converted to `K` (and so is not in `c`).
+function _probe(::AbstractCache{K}, key) where {K}
+    key isa K && return Key(key)
     k = try
         convert(K, key)::K
     catch
-        return 0
+        return nothing
     end
-    return get(c.index, Key(k), 0)
+    return Key(k)
 end
+
+# The slot of `key` in `c`, or 0.
+_slot(c::AbstractCache, key) = (p = _probe(c, key); p === nothing ? 0 : get(c.index, p, 0))
 
 _entrysize(c::AbstractCache, v) = c.by === nothing ? 1 : Int(c.by(v))::Int
 
@@ -89,8 +95,11 @@ function _reuseslot!(c::AbstractCache, i::Int, k, v, sz::Int)
     return i
 end
 
-function Base.get!(default::Base.Callable, c::AbstractCache{K, V}, key) where {K, V}
-    p = _newkey(c, key)
+# `default::F` makes Julia specialize on it, which it skips for functions only passed along.
+Base.get!(default::F, c::AbstractCache, key) where {F <: Base.Callable} = _get!(default, c, _newkey(c, key))
+
+# `get!` with the probe `p` of the key: containers implement this rather than `get!`.
+function _get!(default::F, c::AbstractCache{K, V}, p::Key) where {F, K, V}
     @lock c.lock begin
         i = get(c.index, p, 0)
         if i != 0
@@ -133,6 +142,8 @@ Base.isempty(c::AbstractCache) = @lock c.lock isempty(c.index)
 
 # Iteration walks a snapshot copied under the lock, so it is safe while other tasks use the
 # cache (holding the lock across `iterate` calls would deadlock on an early `break`).
+# The length may change between `length` and `iterate`, so `collect` must not rely on it.
+Base.IteratorSize(::Type{<:AbstractCache}) = Base.SizeUnknown()
 function Base.iterate(c::AbstractCache)
     snapshot = @lock c.lock _pairs(c)
     return iterate(c, (snapshot, 1))
