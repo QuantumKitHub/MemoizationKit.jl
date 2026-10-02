@@ -25,7 +25,11 @@ _within(n::Module, m::Module) = n === m || ((p = parentmodule(n)) !== n && _with
 Empty every global cache, those of `f`, or those of the functions owned by the module `m` or
 its submodules (see [`cache_info`](@ref)). Statistics are kept.
 """
-empty_caches!(args...) = (foreach(empty! ∘ last, cache_info(args...)); nothing)
+empty_caches!() = _empty!(cache_info())
+empty_caches!(f) = _empty!(cache_info(f))
+empty_caches!(m::Module) = _empty!(cache_info(m))
+
+_empty!(caches) = (foreach(empty! ∘ last, caches); nothing)
 
 """
     set_cache_size!(f, maxsize::Integer; by = nothing)
