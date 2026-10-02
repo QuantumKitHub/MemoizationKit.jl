@@ -148,7 +148,8 @@ end
 
 @testset "container preference (compile time)" begin
     @test Cached.DEFAULT_CONTAINER === ClockCache
-    @test CacheStyle(sum, 1) === GlobalCache{ClockCache}()
+    @test CacheStyle(sum, 1) === GlobalCache{ClockCache}() === GlobalCache()
+    @test TaskLocalCache() === TaskLocalCache{ClockCache}()
 
     # a fresh process with `container = "LRU"` in Cached's preferences
     mktempdir() do env
@@ -161,7 +162,7 @@ end
         Pkg.activate($(repr(env)); io = devnull)
         Pkg.develop(path = $(repr(pkgdir(Cached))); io = devnull)
         using Cached
-        print(Cached.CacheStyle(sum, 1) === GlobalCache{LRU}())
+        print(Cached.CacheStyle(sum, 1) === GlobalCache() === GlobalCache{LRU}())
         """
         cmd = addenv(
             `$(Base.julia_cmd()) --startup-file=no -e $code`,
