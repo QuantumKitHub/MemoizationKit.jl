@@ -12,9 +12,10 @@ Keys of different types never match, even when they are `isequal`: in a cache wi
 abstract key type, `1` and `1.0` are different entries. Lookups with a key that is not of type
 `K` convert it to `K` first.
 
-Subtypes provide the fields `index::Dict{Key{Any},Int}`, `keys::Vector{Key{Any}}`, `vals`,
-`sizes`, `currentsize`, `maxsize`, `by`, `hits`, `misses` and `lock`, and implement the eviction
-policy through `_touch!`, `_evict_one!`, `_place!` and `_remove!`.
+A subtype is an eviction policy. It keeps its entries in a field `slots::Cached.Slots{V}`, has
+a constructor `C{K, V}(; maxsize, by)`, and tracks the entries by slot number through
+[`Cached.admit!`](@ref), [`Cached.touch!`](@ref), [`Cached.victim`](@ref) and
+[`Cached.forget!`](@ref); see [Implementing a cache](@ref).
 """
 abstract type AbstractCache{K, V} <: AbstractDict{K, V} end
 
@@ -32,45 +33,112 @@ Base.hash(k::Key, h::UInt) = hash(k.hash, h)
 Base.isequal(p::Key{K}, s::Key{Any}) where {K} = p.hash == s.hash && s.key isa K && isequal(p.key, s.key::K)
 Base.isequal(a::Key{Any}, b::Key{Any}) = a.hash == b.hash && typeof(a.key) === typeof(b.key) && isequal(a.key, b.key)
 
+"""
+    Cached.Slots{V}(maxsize::Integer, by)
+
+The storage of an [`AbstractCache`](@ref): the entries in numbered slots, the key index, the
+size accounting, the statistics and the lock. Slots are numbered from 1 and reused once freed.
+"""
+mutable struct Slots{V}
+    const index::Dict{Key{Any}, Int}
+    const keys::Vector{Key{Any}}
+    const vals::Vector{V}
+    const sizes::Vector{Int}
+    const free::Vector{Int}
+    currentsize::Int
+    maxsize::Int
+    const by::Any
+    hits::Int
+    misses::Int
+    const lock::ReentrantLock
+end
+
+function Slots{V}(maxsize::Integer, by) where {V}
+    maxsize >= 0 || throw(ArgumentError("maxsize must be non-negative"))
+    return Slots{V}(Dict{Key{Any}, Int}(), Key{Any}[], V[], Int[], Int[], 0, maxsize, by, 0, 0, ReentrantLock())
+end
+
+"""
+    Cached.admit!(c::AbstractCache, i::Int)
+
+Start tracking the entry just stored in slot `i`. A slot that was never used before is one past
+the highest slot seen so far: grow the per-slot metadata. Called with the lock held.
+"""
+function admit! end
+
+"""
+    Cached.touch!(c::AbstractCache, i::Int)
+
+Record a hit on the occupied slot `i`. Called with the lock held, on every hit: keep it cheap.
+"""
+function touch! end
+
+"""
+    Cached.victim(c::AbstractCache) -> Int
+
+Choose the occupied slot to evict; `c` is not empty. The slot is then passed to `forget!`.
+Called with the lock held.
+"""
+function victim end
+
+"""
+    Cached.forget!(c::AbstractCache, i::Int)
+
+Stop tracking slot `i`, whose entry is evicted, deleted or overwritten. The slot is freed
+afterwards, and may later be passed to `admit!` again. Called with the lock held.
+"""
+function forget! end
+
 # The probe for a key that is inserted: converted to `K`, which throws if that is not possible.
 _newkey(::AbstractCache{K}, key) where {K} = Key(key isa K ? key : convert(K, key)::K)
 
 # The slot of `key` in `c`, or 0. A key that cannot be converted to `K` is not in the cache.
 function _slot(c::AbstractCache{K}, key) where {K}
-    key isa K && return get(c.index, Key(key), 0)
+    key isa K && return get(c.slots.index, Key(key), 0)
     k = try
         convert(K, key)::K
     catch
         return 0
     end
-    return get(c.index, Key(k), 0)
+    return get(c.slots.index, Key(k), 0)
 end
 
-_entrysize(c::AbstractCache, v) = c.by === nothing ? 1 : Int(c.by(v))::Int
+_entrysize(s::Slots, v) = s.by === nothing ? 1 : Int(s.by(v))::Int
 
 # Insert a new key (not currently present), evicting until it fits.
 # Values larger than the whole cache are not stored.
 function _insert!(c::AbstractCache, p::Key, v, sz::Int)
-    sz > c.maxsize && return c
-    while c.currentsize + sz > c.maxsize && !isempty(c.index)
-        _evict_one!(c)
+    s = c.slots
+    sz > s.maxsize && return c
+    while s.currentsize + sz > s.maxsize && !isempty(s.index)
+        _free!(c, victim(c))
     end
     k = Key{Any}(p.key, p.hash)
-    i = isempty(c.free) ? _newslot!(c, k, v, sz) : _reuseslot!(c, pop!(c.free), k, v, sz)
-    c.index[k] = i
-    _place!(c, i)
-    c.currentsize += sz
+    if isempty(s.free)
+        push!(s.keys, k)
+        push!(s.vals, v)
+        push!(s.sizes, sz)
+        i = length(s.keys)
+    else
+        i = pop!(s.free)
+        s.keys[i], s.vals[i], s.sizes[i] = k, v, sz
+    end
+    s.index[k] = i
+    s.currentsize += sz
+    admit!(c, i)
     return c
 end
 
-# Release slot `i`: drop it from the index and clear its key and value so they can be
+# Free slot `i`: drop it from the index and clear its key and value so they can be
 # garbage-collected while the slot sits on the free list.
-function _freeslot!(c::AbstractCache, i::Int)
-    delete!(c.index, c.keys[i])
-    _unset!(c.keys, i)
-    _unset!(c.vals, i)
-    c.currentsize -= c.sizes[i]
-    push!(c.free, i)
+function _free!(c::AbstractCache, i::Int)
+    forget!(c, i)
+    s = c.slots
+    delete!(s.index, s.keys[i])
+    _unset!(s.keys, i)
+    _unset!(s.vals, i)
+    s.currentsize -= s.sizes[i]
+    push!(s.free, i)
     return c
 end
 
@@ -82,61 +150,56 @@ function _unset!(v::Vector, i::Int)
     return v
 end
 
-function _reuseslot!(c::AbstractCache, i::Int, k, v, sz::Int)
-    c.keys[i] = k
-    c.vals[i] = v
-    c.sizes[i] = sz
-    return i
-end
-
 function Base.get!(default::Base.Callable, c::AbstractCache{K, V}, key) where {K, V}
     p = _newkey(c, key)
-    @lock c.lock begin
-        i = get(c.index, p, 0)
+    s = c.slots
+    @lock s.lock begin
+        i = get(s.index, p, 0)
         if i != 0
-            c.hits += 1
-            _touch!(c, i)
-            return c.vals[i]
+            s.hits += 1
+            touch!(c, i)
+            return s.vals[i]
         end
-        c.misses += 1
+        s.misses += 1
     end
     v = convert(V, default())::V
-    sz = _entrysize(c, v)
-    @lock c.lock begin
+    sz = _entrysize(s, v)
+    @lock s.lock begin
         # another task may have filled the key while we were computing
-        i = get(c.index, p, 0)
-        i == 0 || return c.vals[i]
+        i = get(s.index, p, 0)
+        i == 0 || return s.vals[i]
         _insert!(c, p, v, sz)
     end
     return v
 end
 
 function Base.get(c::AbstractCache, key, default)
-    return @lock c.lock begin
+    return @lock c.slots.lock begin
         i = _slot(c, key)
-        i == 0 ? default : (_touch!(c, i); c.vals[i])
+        i == 0 ? default : (touch!(c, i); c.slots.vals[i])
     end
 end
 
 function Base.getindex(c::AbstractCache, key)
-    return @lock c.lock begin
+    return @lock c.slots.lock begin
         i = _slot(c, key)
         i == 0 && throw(KeyError(key))
-        _touch!(c, i)
-        c.vals[i]
+        touch!(c, i)
+        c.slots.vals[i]
     end
 end
 
-Base.haskey(c::AbstractCache, key) = @lock c.lock _slot(c, key) != 0
-Base.length(c::AbstractCache) = @lock c.lock length(c.index)
-Base.isempty(c::AbstractCache) = @lock c.lock isempty(c.index)
+Base.haskey(c::AbstractCache, key) = @lock c.slots.lock _slot(c, key) != 0
+Base.length(c::AbstractCache) = @lock c.slots.lock length(c.slots.index)
+Base.isempty(c::AbstractCache) = @lock c.slots.lock isempty(c.slots.index)
 
 # Iteration walks a snapshot copied under the lock, so it is safe while other tasks use the
 # cache (holding the lock across `iterate` calls would deadlock on an early `break`).
 # The length may change between `length` and `iterate`, so `collect` must not rely on it.
 Base.IteratorSize(::Type{<:AbstractCache}) = Base.SizeUnknown()
-function Base.iterate(c::AbstractCache)
-    snapshot = @lock c.lock _pairs(c)
+function Base.iterate(c::AbstractCache{K, V}) where {K, V}
+    s = c.slots
+    snapshot = @lock s.lock Pair{K, V}[k.key::K => s.vals[i] for (k, i) in s.index]
     return iterate(c, (snapshot, 1))
 end
 function Base.iterate(::AbstractCache, (snapshot, i)::Tuple{Vector, Int})
@@ -146,20 +209,27 @@ end
 function Base.setindex!(c::AbstractCache{K, V}, v, key) where {K, V}
     p = _newkey(c, key)
     val = convert(V, v)::V
-    sz = _entrysize(c, val)
-    @lock c.lock begin
-        i = get(c.index, p, 0)
-        i == 0 || _remove!(c, i)
+    s = c.slots
+    sz = _entrysize(s, val)
+    @lock s.lock begin
+        i = get(s.index, p, 0)
+        i == 0 || _free!(c, i)
         _insert!(c, p, val, sz)
     end
     return c
 end
 
 function Base.delete!(c::AbstractCache, key)
-    @lock c.lock begin
+    @lock c.slots.lock begin
         i = _slot(c, key)
-        i == 0 || _remove!(c, i)
+        i == 0 || _free!(c, i)
     end
+    return c
+end
+
+# Frees every slot like `delete!` does, highest first so that refilling reuses them in order.
+function Base.empty!(c::AbstractCache)
+    @lock c.slots.lock foreach(i -> _free!(c, i), sort!(collect(values(c.slots.index)); rev = true))
     return c
 end
 
@@ -170,10 +240,11 @@ Change the size limit of `c`, evicting entries until it fits.
 """
 function Base.resize!(c::AbstractCache; maxsize::Integer)
     maxsize >= 0 || throw(ArgumentError("maxsize must be non-negative"))
-    @lock c.lock begin
-        c.maxsize = maxsize
-        while c.currentsize > c.maxsize && !isempty(c.index)
-            _evict_one!(c)
+    s = c.slots
+    @lock s.lock begin
+        s.maxsize = maxsize
+        while s.currentsize > s.maxsize && !isempty(s.index)
+            _free!(c, victim(c))
         end
     end
     return c
@@ -184,15 +255,16 @@ end
 
 Return `(; hits, misses, length, currentsize, maxsize)` for `c`.
 """
-cache_stats(c::AbstractCache) = @lock c.lock (;
-    c.hits, c.misses, length = length(c.index), c.currentsize, c.maxsize,
-)
+function cache_stats(c::AbstractCache)
+    s = c.slots
+    return @lock s.lock (; s.hits, s.misses, length = length(s.index), s.currentsize, s.maxsize)
+end
 
 # Compact form, also used as the header of the multi-line `show` inherited from `AbstractDict`.
 function Base.show(io::IO, c::AbstractCache)
     s = cache_stats(c)
     print(io, typeof(c), "(")
-    c.by === nothing ? print(io, s.length, "/", s.maxsize, " entries") :
+    c.slots.by === nothing ? print(io, s.length, "/", s.maxsize, " entries") :
         print(io, s.length, " entries, size ", s.currentsize, "/", s.maxsize)
     print(io, ", ", s.hits, " hits, ", s.misses, " misses)")
     return nothing

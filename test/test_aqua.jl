@@ -8,7 +8,7 @@ end
 
 @static if VERSION >= v"1.11.0-DEV.469"
     @testset "public API" begin
-        for name in (:AbstractCache, :cache_stats, :cachesize, :implementation, :instrument_label)
+        for name in (:AbstractCache, :Slots, :admit!, :touch!, :victim, :forget!, :cache_stats, :cachesize, :implementation, :instrument_label)
             @test Base.ispublic(Cached, name)
         end
     end

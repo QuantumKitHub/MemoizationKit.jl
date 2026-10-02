@@ -199,10 +199,10 @@ end
 @testset "resizing a byte-measured function keeps its cache" begin
     m = dashboard("dash_bytes")
     c = only(m.lines).cache
-    @test c.by !== nothing && length(c) == 1
+    @test c.slots.by !== nothing && length(c) == 1
     press(m, :enter, :right, :enter)
     @test only(cache_info(dash_bytes)).second === c # not discarded
-    @test length(c) == 1 && c.by !== nothing && Cached.cache_stats(c).maxsize == 2 * 10^6
+    @test length(c) == 1 && c.slots.by !== nothing && Cached.cache_stats(c).maxsize == 2 * 10^6
 end
 
 @testset "refresh picks up new caches and rates" begin

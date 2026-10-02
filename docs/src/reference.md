@@ -14,6 +14,10 @@ resize!(::Cached.AbstractCache)
 Cached.cache_stats
 ```
 
+The interface for new containers ([`Cached.Slots`](@ref), [`Cached.admit!`](@ref),
+[`Cached.touch!`](@ref), [`Cached.victim`](@ref), [`Cached.forget!`](@ref)) is described in
+[Implementing a cache](@ref).
+
 ## Caching functions
 
 ```@docs

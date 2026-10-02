@@ -8,7 +8,7 @@ export cache_dashboard, enable_cache_timers!, disable_cache_timers!
 
 # documented API that is used qualified, e.g. by overloading `Cached.cachesize`
 @static if VERSION >= v"1.11.0-DEV.469"
-    eval(Meta.parse("public AbstractCache, cache_stats, cachesize, implementation, instrument_label"))
+    eval(Meta.parse("public AbstractCache, Slots, admit!, touch!, victim, forget!, cache_stats, cachesize, implementation, instrument_label"))
 end
 
 using Base: @lock

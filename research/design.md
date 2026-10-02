@@ -74,7 +74,14 @@ CacheStyle(f, args...) = GlobalLRUCache()     # default; users specialize per fu
 ## Containers
 
 Cached provides its own containers, so it no longer depends on LRUCache.jl.
-Both implement the same small interface: `get!`, `get`, `haskey`, `empty!`, `resize!`, `length`, and hit/miss statistics.
+Both are `AbstractDict`s with `get!`, `get`, `haskey`, `delete!`, `empty!`, `resize!`, `length`, iteration, and hit/miss statistics.
+
+- **One generic implementation, small policies** (revised on 2026-10-02). `AbstractCache` implements all of these once, on a shared `Slots{V}` storage: the index, the keys, values and sizes in numbered slots with a free list, the size accounting, the statistics and the lock.
+  A container holds it in a field `slots` and is only an eviction policy over slot numbers, in four methods called with the lock held: `admit!(c, i)` (new entry in slot `i`), `touch!(c, i)` (hit), `victim(c)` (slot to evict) and `forget!(c, i)` (slot leaves, by eviction, `delete!`, overwrite or `empty!`).
+  These are public but unexported; the user-facing description, with a FIFO example that the tests also run, is `docs/src/interface.md`.
+  - A required field rather than accessor methods: every policy would implement them identically, and the hit path reads the fields directly. The extra indirection through `slots` costs nothing measurable.
+  - `empty!` frees every slot through `forget!`, so policies need no separate reset. Iteration order is unspecified (index order); `LRU` iterated in recency order before.
+  - A container with another locking scheme, e.g. lock-free hits for `ClockCache`, can keep `Slots` and the policy methods for its bookkeeping and define its own lookups.
 
 - **`LRU{K,V}`** is array-backed. It uses a `Dict` index, slots stored in vectors, and `prev`/`next` stored as integer vectors. Nodes are never allocated, and eviction is exact LRU.
 - **The index is a `Dict{Key{Any},Int}`.** Each stored `Key{Any}` holds the key and its hash. Lookups probe it with a concretely typed `Key{K}`, whose `isequal` checks `s.key isa K` before comparing, so the comparison is static and the key is never boxed. A `Key{Any}` cannot serve as the probe: storing the key in an `Any` field boxes it (96 B per lookup on TensorKit-like keys).

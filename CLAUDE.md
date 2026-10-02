@@ -43,7 +43,9 @@ julia --project=/tmp/runic -e 'using Pkg; Pkg.add("Runic"); using Runic; Runic.m
   with `owner` the package owning `f` (or its module, outside packages); its default `thunk()` compiles away.
 - `src/registry.jl`: global caches, one untyped `C{Any,Any}` per function (its budget), looked up
   lock-free in an atomically published `IdDict` snapshot.
-- `src/containers/`: `LRU` and `ClockCache`, sharing the `AbstractCache` interface. Keys are
+- `src/containers/`: `interface.jl` implements every `AbstractCache` method once, on the shared
+  `Slots` storage (field `slots`); `LRU` and `ClockCache` are eviction policies over slot numbers,
+  through `admit!`, `touch!`, `victim` and `forget!` (see `docs/src/interface.md`). Keys are
   stored as `Key{Any}` and probed with a concretely typed `Key{K}`, so hits never box.
 - `src/preferences.jl`: default settings from Preferences.jl, resolved once per function
   (runtime > function > package > `[Cached]` > built-in), and `set_cache_preferences!`.

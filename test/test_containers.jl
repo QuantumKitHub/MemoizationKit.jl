@@ -2,7 +2,18 @@ using Test
 using Cached
 using Cached: AbstractCache, cache_stats
 
-const CACHETYPES = (LRU, ClockCache)
+# The example policy of docs/src/interface.md, also run through the generic tests below.
+mutable struct FIFO{K, V} <: AbstractCache{K, V}
+    const slots::Cached.Slots{V}
+    const queue::Vector{Int} # occupied slots, oldest first
+end
+FIFO{K, V}(; maxsize = 10_000, by = nothing) where {K, V} = FIFO{K, V}(Cached.Slots{V}(maxsize, by), Int[])
+Cached.admit!(c::FIFO, i::Int) = push!(c.queue, i)
+Cached.touch!(::FIFO, ::Int) = nothing
+Cached.victim(c::FIFO) = first(c.queue)
+Cached.forget!(c::FIFO, i::Int) = deleteat!(c.queue, findfirst(==(i), c.queue))
+
+const CACHETYPES = (LRU, ClockCache, FIFO)
 
 @testset "$C: basic interface" for C in CACHETYPES
     c = C{Int, String}(; maxsize = 3)
@@ -38,6 +49,9 @@ end
     resize!(c; maxsize = 4)
     @test length(c) == 4
     @test cache_stats(c).currentsize == 4
+    empty!(c)
+    foreach(i -> c[i] = i, 1:20) # refills the freed slots, then evicts
+    @test length(c) == 4 && all(((k, v),) -> k == v, c)
     resize!(c; maxsize = 0)
     @test isempty(c)
     get!(() -> 1, c, 1)
@@ -51,9 +65,14 @@ end
     end
     c[1] # 1 becomes most recent, 2 is now least recent
     c[4] = 4
-    @test !haskey(c, 2)
-    @test collect(keys(Dict(c))) ⊆ [1, 3, 4]
-    @test first.(collect(c)) == [4, 1, 3] # iteration is most to least recent
+    @test !haskey(c, 2) && haskey(c, 1) && haskey(c, 3) # haskey does not count as use
+    c[5] = 5 # recency is now 4, 1, 3
+    @test !haskey(c, 3) && haskey(c, 1) && haskey(c, 4)
+    empty!(c)
+    foreach(i -> c[i] = i, 1:3)
+    c[2]
+    c[4] = 4 # the order is rebuilt from scratch after `empty!`
+    @test !haskey(c, 1) && haskey(c, 2)
 end
 
 @testset "ClockCache: second chance" begin
@@ -66,6 +85,18 @@ end
     @test haskey(c, 1) && !haskey(c, 2) && haskey(c, 3) && haskey(c, 4)
     c[5] = 5 # 3 has a clear bit
     @test !haskey(c, 3)
+end
+
+@testset "FIFO: insertion order, hits ignored" begin
+    c = FIFO{Int, Int}(; maxsize = 3)
+    foreach(i -> c[i] = i, 1:3)
+    c[1]
+    c[4] = 4
+    @test !haskey(c, 1) && haskey(c, 2)
+    delete!(c, 3)
+    c[5] = 5 # fits in the freed slot
+    c[6] = 6
+    @test !haskey(c, 2) && haskey(c, 4) && haskey(c, 5) && haskey(c, 6)
 end
 
 @testset "$C: byte limit" for C in CACHETYPES
