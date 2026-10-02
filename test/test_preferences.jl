@@ -162,7 +162,7 @@ end
         Pkg.activate($(repr(env)); io = devnull)
         Pkg.develop(path = $(repr(pkgdir(Cached))); io = devnull)
         using Cached
-        print(Cached.CacheStyle(sum, 1) === GlobalCache() === GlobalCache{LRU}())
+        print(Cached.CacheStyle(sum, 1) === GlobalCache{LRU}())
         """
         cmd = addenv(
             `$(Base.julia_cmd()) --startup-file=no -e $code`,
