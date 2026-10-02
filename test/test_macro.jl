@@ -76,6 +76,8 @@ Cached.CacheStyle(::typeof(nocache), x::String) = NoCache()
 @cached tasklocal(x) = counting(x)
 Cached.CacheStyle(::typeof(tasklocal), x::Int) = TaskLocalCache{LRU}()
 Cached.CacheStyle(::typeof(tasklocal), x::Symbol) = TaskLocalCache{Dict}()
+Cached.CacheStyle(::typeof(tasklocal), x::Float64) = TaskLocalCache() # default container
+Cached.CacheStyle(::typeof(tasklocal), x::String) = GlobalCache()
 
 @cached sized(x) = counting(x)
 @cached manytypes(x) = counting(x)
@@ -179,7 +181,13 @@ end
     @test ncalls(() -> fetch(Threads.@spawn tasklocal(1))) == (1, 1) # new task, new cache
     @test ncalls(() -> tasklocal(:a)) == (:a, 1)
     @test ncalls(() -> tasklocal(:a)) == (:a, 0)
+    @test ncalls(() -> tasklocal(1.0)) == (1.0, 1)
+    @test ncalls(() -> tasklocal(1.0)) == (1.0, 0)
+    @test ncalls(() -> fetch(Threads.@spawn tasklocal(1.0))) == (1.0, 1)
     @test isempty(cache_info(tasklocal))
+    @test ncalls(() -> tasklocal("a")) == ("a", 1)
+    @test ncalls(() -> tasklocal("a")) == ("a", 0)
+    @test only(caches(tasklocal)) isa Cached.DEFAULT_CONTAINER
     @test_throws ArgumentError GlobalCache{Dict}()
 end
 

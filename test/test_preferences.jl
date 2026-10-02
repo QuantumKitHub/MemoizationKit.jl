@@ -148,7 +148,8 @@ end
 
 @testset "container preference (compile time)" begin
     @test Cached.DEFAULT_CONTAINER === ClockCache
-    @test CacheStyle(sum, 1) === GlobalCache{ClockCache}()
+    @test CacheStyle(sum, 1) === GlobalCache{ClockCache}() === GlobalCache()
+    @test TaskLocalCache() === TaskLocalCache{ClockCache}()
 
     # a fresh process with `container = "LRU"` in Cached's preferences
     mktempdir() do env

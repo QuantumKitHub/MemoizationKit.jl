@@ -47,7 +47,7 @@ Unknown keys and invalid values are ignored with a warning.
 ## When changes take effect
 
 - `maxsize` and `measure` are read when a function's first cache is created, so a change applies to functions that have not been called yet in the current session, and to every function after a restart.
-- `container` is a compile-time preference, because it selects the default `CacheStyle`. Changing it recompiles Cached on the next start.
+- `container` is a compile-time preference, because it selects the default `CacheStyle`. Changing it recompiles Cached on the next start. `GlobalCache()` and `TaskLocalCache()` use this container, so `CacheStyle` methods that return them follow the preference.
 
 Use [`set_cache_preferences!`](@ref) to write the sections, which merges with what is already there:
 
