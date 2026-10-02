@@ -105,6 +105,24 @@ end
     @test all(((k, v),) -> v == 3k, c)
 end
 
+@testset "$C: collect while other tasks write" for C in CACHETYPES
+    c = C{Int, Int}(; maxsize = 50)
+    done = Threads.Atomic{Bool}(false)
+    writer = Threads.@spawn while !done[]
+        foreach(k -> get!(() -> k, c, k), 1:200)
+        empty!(c)
+        yield()
+    end
+    ok = true
+    for _ in 1:2_000
+        ok &= all(((k, v),) -> k == v, collect(c)) # used to throw when the length changed
+        yield()
+    end
+    done[] = true
+    wait(writer)
+    @test ok
+end
+
 @testset "$C: freed slots release their values" for C in CACHETYPES
     c = C{Int, Base.RefValue{Int}}(; maxsize = 3)
     # build the value inside a function so no local keeps it alive
