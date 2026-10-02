@@ -1,3 +1,16 @@
+# An entry of a `ClockCache`: immutable apart from its reference bit, see the rules below.
+mutable struct Entry{K, V}
+    const key::K
+    const hash::UInt
+    const val::V
+    const size::Int
+    const pos::Int # slot in `ring`
+    @atomic ref::Bool
+end
+
+struct Tombstone end
+const TOMBSTONE = Tombstone()
+
 """
     ClockCache{K, V}(; maxsize::Integer = 10_000, by = nothing)
 
@@ -8,37 +21,281 @@ never hit again are evicted first.
 
 `maxsize` limits the number of entries, or, when `by` is given, the sum of `by(value)` over
 all entries.
+
+Lookups take no lock and write no shared memory, so hits scale with the number of threads that
+share the cache. Insertions, evictions and the other changes take a lock. A lookup that races
+with a removal may still return the removed value, and one that races with an insertion may
+miss it; a returned value always belongs to its key.
 """
-mutable struct ClockCache{K, V} <: SlotCache{K, V}
-    const slots::Slots{V}
-    const ref::Vector{Bool}
-    const live::Vector{Bool}
-    hand::Int # last inspected slot
+mutable struct ClockCache{K, V} <: AbstractCache{K, V}
+    @atomic table::Vector{Any} # open-addressing hash table of `Entry{K, V}`s, see `_find`
+    used::Int # entries and tombstones in `table`
+    const ring::Vector{Union{Nothing, Entry{K, V}}} # the clock, with `nothing` for a free slot
+    const free::Vector{Int} # free slots of `ring`
+    hand::Int # last inspected slot of `ring`
+    count::Int
+    currentsize::Int
+    maxsize::Int
+    const by::Any
+    const counts::Vector{Int} # hits and misses per thread, see `_count!`
+    const lock::ReentrantLock
 end
 
-ClockCache{K, V}(; maxsize::Integer = 10_000, by = nothing) where {K, V} =
-    ClockCache{K, V}(Slots{V}(maxsize, by), Bool[], Bool[], 0)
+# Lock-free lookups rest on three rules, which every method below keeps:
+#
+# 1. An `Entry` is immutable apart from its reference bit, so a reader that loads one sees a key
+#    with its own value.
+# 2. A published table never changes length: it is replaced as a whole, by a release store to
+#    `c.table`. Readers load the table and then each slot with acquire ordering, so they see
+#    fully constructed entries, and their indices are always in bounds.
+# 3. In a published table, a slot only changes from `nothing` to an entry, from an entry to
+#    `TOMBSTONE`, or from `TOMBSTONE` to an entry, all under the lock; or to `nothing` when the
+#    next slot is `nothing`, so that no probe passes it anyway. Entries never move, so a probe
+#    for a key that is present and not concurrently removed always finds it.
+#
+# Writers store slots with `setindex!`, which is a release store with a GC write barrier on every
+# supported Julia version. (Storing through a pointer would skip the barrier, and the GC could
+# free the entry.) Removed entries are dropped from the table rather than unset, so readers
+# never see an undefined slot, and the GC collects them once no reader holds them.
 
-function admit!(c::ClockCache, i::Int)
-    i > length(c.ref) && (push!(c.ref, false); push!(c.live, false))
-    c.ref[i] = false
-    c.live[i] = true
+const MINTABLE = 16
+_emptytable(n::Int = MINTABLE) = fill!(Vector{Any}(undef, n), nothing)
+
+const COUNTSTRIDE = 8 # `Int`s per 64-byte cache line
+const HIT, MISS = 1, 2
+
+function ClockCache{K, V}(; maxsize::Integer = 10_000, by = nothing) where {K, V}
+    maxsize >= 0 || throw(ArgumentError("maxsize must be non-negative"))
+    return ClockCache{K, V}(
+        _emptytable(), 0, Union{Nothing, Entry{K, V}}[], Int[], 0, 0, 0, maxsize, by,
+        zeros(Int, COUNTSTRIDE * Threads.maxthreadid()), ReentrantLock()
+    )
+end
+
+_entrysize(c::ClockCache, v) = c.by === nothing ? 1 : Int(c.by(v))::Int
+
+@inline _loadslot(t::Vector{Any}, i::Int) = GC.@preserve t unsafe_load(pointer(t, i), :acquire)
+
+# The entry for the probe `p` in table `t`, or `nothing`. Linear probing from the hash; a table
+# is at most half full, so the probe ends at an empty slot.
+@inline function _find(t::Vector{Any}, p::Key{P}, ::Type{E}) where {P, E <: Entry}
+    mask = length(t) - 1
+    i = p.hash % Int
+    for _ in 0:mask # bounds the loop also if slots change while probing
+        e = _loadslot(t, (i & mask) + 1)
+        e === nothing && return nothing
+        if e isa E && e.hash == p.hash
+            k = e.key
+            k isa P && isequal(p.key, k::P) && return e
+        end
+        i += 1
+    end
+    return nothing
+end
+_find(c::ClockCache{K, V}, p::Key) where {K, V} = _find((@atomic :acquire c.table), p, Entry{K, V})
+
+_lookup(c::ClockCache, key) = (p = _probe(c, key); p === nothing ? nothing : _find(c, p))
+
+# Hits and misses are counted per thread, in separate cache lines, with relaxed loads and stores:
+# a shared counter would bounce between cores on every hit. Two tasks on one thread cannot
+# interleave between the load and the store, since neither yields; threads adopted after the
+# cache was created share counters, which may then lose a few counts.
+@inline function _count!(c::ClockCache, which::Int)
+    v = c.counts
+    i = mod(Threads.threadid() - 1, length(v) ÷ COUNTSTRIDE) * COUNTSTRIDE + which
+    GC.@preserve v begin
+        p = pointer(v, i)
+        unsafe_store!(p, unsafe_load(p, :monotonic) + 1, :monotonic)
+    end
+    return nothing
+end
+function _counted(c::ClockCache, which::Int)
+    v = c.counts
+    return GC.@preserve v sum(i -> unsafe_load(pointer(v, i), :monotonic), which:COUNTSTRIDE:length(v))
+end
+
+# Hits only write the reference bit if it is clear, so hot entries are not written at all.
+@inline _touch!(e::Entry) = ((@atomic :monotonic e.ref) || (@atomic :monotonic e.ref = true); e)
+
+# `default::F` makes Julia specialize on it, which it may skip for a function only passed along.
+function Base.get!(default::F, c::ClockCache{K, V}, key) where {F <: Base.Callable, K, V}
+    p = _newkey(c, key)
+    e = _find(c, p)
+    if e !== nothing
+        _count!(c, HIT)
+        return _touch!(e).val
+    end
+    _count!(c, MISS)
+    v = convert(V, default())::V
+    sz = _entrysize(c, v)
+    @lock c.lock begin
+        # another task may have filled the key while we were computing
+        e = _find(c, p)
+        e === nothing || return e.val
+        _insert!(c, p, v, sz)
+    end
+    return v
+end
+
+function Base.get(c::ClockCache, key, default)
+    e = _lookup(c, key)
+    return e === nothing ? default : _touch!(e).val
+end
+function Base.getindex(c::ClockCache, key)
+    e = _lookup(c, key)
+    e === nothing && throw(KeyError(key))
+    return _touch!(e).val
+end
+Base.haskey(c::ClockCache, key) = _lookup(c, key) !== nothing
+Base.length(c::ClockCache) = @lock c.lock c.count
+Base.isempty(c::ClockCache) = length(c) == 0
+
+# Mutations, all with the lock held.
+
+# Insert a new key (not currently present), evicting until it fits.
+# Values larger than the whole cache are not stored.
+function _insert!(c::ClockCache{K, V}, p::Key, v, sz::Int) where {K, V}
+    sz > c.maxsize && return c
+    while c.currentsize + sz > c.maxsize && c.count > 0
+        _evict_one!(c)
+    end
+    2 * (c.used + 1) > length(c.table) && _rebuild!(c, c.count + 1)
+    isempty(c.free) && push!(c.ring, nothing)
+    pos = isempty(c.free) ? length(c.ring) : pop!(c.free)
+    e = Entry{K, V}(p.key, p.hash, v, sz, pos, false)
+    c.ring[pos] = e
+    _place!(c.table, e) === nothing && (c.used += 1)
+    c.count += 1
+    c.currentsize += sz
     return c
 end
 
-touch!(c::ClockCache, i::Int) = (c.ref[i] = true; c)
-
-forget!(c::ClockCache, i::Int) = (c.live[i] = false; c)
-
-# Terminates within two sweeps, since the first sweep clears every reference bit.
-function victim(c::ClockCache)
-    n = length(c.ref)
+# Store `e` in the first free slot of its probe sequence; returns what was there.
+function _place!(t::Vector{Any}, e::Entry)
+    mask = length(t) - 1
+    i = e.hash % Int
     while true
-        c.hand = c.hand >= n ? 1 : c.hand + 1
-        i = c.hand
-        c.live[i] || continue
-        c.ref[i] || return i
-        c.ref[i] = false
+        j = (i & mask) + 1
+        old = t[j]
+        if !(old isa Entry)
+            t[j] = e
+            return old
+        end
+        i += 1
     end
     return
 end
+
+# Publish a new table without tombstones, with room for `n` entries at a quarter load.
+function _rebuild!(c::ClockCache, n::Int)
+    t = _emptytable(max(MINTABLE, nextpow(2, 4n)))
+    for e in c.ring
+        e === nothing || _place!(t, e)
+    end
+    c.used = c.count
+    @atomic :release c.table = t
+    return c
+end
+
+function _remove!(c::ClockCache, e::Entry)
+    t = c.table
+    mask = length(t) - 1
+    i = e.hash % Int
+    while t[(i & mask) + 1] !== e
+        i += 1
+    end
+    if t[((i + 1) & mask) + 1] === nothing
+        # No probe continues past the next slot, so this slot, and the tombstones before it,
+        # can end probes as well: they become empty, which saves rebuilds.
+        while true
+            t[(i & mask) + 1] = nothing
+            c.used -= 1
+            i -= 1
+            t[(i & mask) + 1] === TOMBSTONE || break
+        end
+    else
+        t[(i & mask) + 1] = TOMBSTONE
+    end
+    c.ring[e.pos] = nothing
+    push!(c.free, e.pos)
+    c.count -= 1
+    c.currentsize -= e.size
+    return c
+end
+
+# Readers may set reference bits while the hand clears them, so after two sweeps without
+# finding a clear bit the entry under the hand is evicted anyway.
+function _evict_one!(c::ClockCache)
+    n = length(c.ring)
+    for sweep in 1:(2n + 1)
+        c.hand = c.hand >= n ? 1 : c.hand + 1
+        e = c.ring[c.hand]
+        e === nothing && continue
+        if sweep <= 2n && (@atomic :monotonic e.ref)
+            @atomic :monotonic e.ref = false
+        else
+            return _remove!(c, e)
+        end
+    end
+    error("unreachable: no entry to evict")
+end
+
+function Base.setindex!(c::ClockCache{K, V}, v, key) where {K, V}
+    p = _newkey(c, key)
+    val = convert(V, v)::V
+    sz = _entrysize(c, val)
+    @lock c.lock begin
+        e = _find(c, p)
+        e === nothing || _remove!(c, e)
+        _insert!(c, p, val, sz)
+    end
+    return c
+end
+
+function Base.delete!(c::ClockCache, key)
+    @lock c.lock begin
+        e = _lookup(c, key)
+        e === nothing || _remove!(c, e)
+    end
+    return c
+end
+
+function Base.resize!(c::ClockCache; maxsize::Integer)
+    maxsize >= 0 || throw(ArgumentError("maxsize must be non-negative"))
+    @lock c.lock begin
+        c.maxsize = maxsize
+        while c.currentsize > c.maxsize && c.count > 0
+            _evict_one!(c)
+        end
+    end
+    return c
+end
+
+function Base.empty!(c::ClockCache)
+    @lock c.lock begin
+        @atomic :release c.table = _emptytable()
+        empty!(c.ring)
+        empty!(c.free)
+        c.used = c.hand = c.count = c.currentsize = 0
+    end
+    return c
+end
+
+function cache_stats(c::ClockCache)
+    return @lock c.lock (;
+        hits = _counted(c, HIT), misses = _counted(c, MISS), length = c.count, c.currentsize, c.maxsize, c.by,
+    )
+end
+
+# Iteration walks a snapshot copied under the lock, in slot order; see the `SlotCache` methods.
+Base.IteratorSize(::Type{<:ClockCache}) = Base.SizeUnknown()
+function Base.iterate(c::ClockCache{K, V}) where {K, V}
+    snapshot = @lock c.lock Pair{K, V}[e.key => e.val for e in c.ring if e !== nothing]
+    return iterate(c, (snapshot, 1))
+end
+function Base.iterate(::ClockCache, (snapshot, i)::Tuple{Vector, Int})
+    return i > length(snapshot) ? nothing : (snapshot[i], (snapshot, i + 1))
+end
+
+# The entries below the compact header.
+Base.show(io::IO, m::MIME"text/plain", c::ClockCache) = invoke(show, Tuple{IO, MIME"text/plain", AbstractDict}, io, m, c)

@@ -51,18 +51,22 @@ function victim end
 function forget! end
 
 # The probe for a key that is inserted: converted to `K`, which throws if that is not possible.
-_newkey(::SlotCache{K}, key) where {K} = Key(key isa K ? key : convert(K, key)::K)
+_newkey(::AbstractCache{K}, key) where {K} = Key(key isa K ? key : convert(K, key)::K)
 
-# The slot of `key` in `c`, or 0. A key that cannot be converted to `K` is not in the cache.
-function _slot(c::SlotCache{K}, key) where {K}
-    key isa K && return get(c.slots.index, Key(key), 0)
+# The probe for a key that is looked up, or `nothing`: a key that cannot be converted to `K` is
+# not in the cache.
+function _probe(::AbstractCache{K}, key) where {K}
+    key isa K && return Key(key)
     k = try
         convert(K, key)::K
     catch
-        return 0
+        return nothing
     end
-    return get(c.slots.index, Key(k), 0)
+    return Key(k)
 end
+
+# The slot of `key` in `c`, or 0.
+_slot(c::SlotCache, key) = (p = _probe(c, key); p === nothing ? 0 : get(c.slots.index, p, 0))
 
 _entrysize(s::Slots, v) = s.by === nothing ? 1 : Int(s.by(v))::Int
 

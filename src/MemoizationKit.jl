@@ -26,6 +26,7 @@ include("containers/interface.jl")
 include("containers/slots.jl")
 include("containers/lru.jl")
 include("containers/clock.jl")
+include("containers/localclock.jl")
 
 include("registry.jl")
 include("preferences.jl")

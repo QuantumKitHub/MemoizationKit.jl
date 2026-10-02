@@ -167,6 +167,7 @@ See [Configuration](configuration.md) for persistent defaults and custom size me
   Changes to external state or method definitions (including through Revise) do not automatically invalidate results.
   Clear the global cache with `empty_caches!`; for disk results, update [`MemoizationKit.diskversion`](@ref).
 - Built-in shared caches are thread-safe.
+  [`ClockCache`](@ref) hits take no lock, so they scale with the number of threads.
   Computations run outside the cache lock, allowing recursion; simultaneous misses may compute the same key more than once.
   Exceptions are propagated without storing a result.
 
@@ -183,7 +184,7 @@ Strategies, settings, persistence, and monitoring work together under one functi
 | [Memoize.jl](https://github.com/JuliaCollections/Memoize.jl#usage) | You want a small `@memoize` API with a dictionary of your choice. | Limits and statistics depend on the container; persistence, a dashboard, and package settings require additional integration. |
 | [Memoization.jl](https://github.com/marius311/Memoization.jl#readme) | You need to memoize individual calls or closures, as well as method definitions. | Its default cache is unbounded and not thread-safe; custom containers can address those needs, but management and persistence tools require additional integration. |
 | [LRUCache.jl](https://github.com/JuliaCollections/LRUCache.jl#readme) | You want a thread-safe cache dictionary with limits, statistics, resizing, and eviction callbacks. | You write the function wrapper and management code, or combine it with a memoization macro. |
-| MemoizationKit.jl | You want bounded caches, per-type strategies, disk persistence, and live monitoring under one API. | The macro requires a method definition; shared caches use locks, and disk results need explicit versioning and cleanup. |
+| MemoizationKit.jl | You want bounded caches, per-type strategies, disk persistence, and live monitoring under one API. | The macro requires a method definition; shared caches lock to insert entries (and `LRU` also on hits), and disk results need explicit versioning and cleanup. |
 
 Memoize.jl and Memoization.jl both accept LRUCache.jl containers, so bounded memory and statistics are available without MemoizationKit.
 Memoization.jl also preserves return-type inference.

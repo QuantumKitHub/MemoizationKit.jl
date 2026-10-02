@@ -40,6 +40,7 @@ Keep Markdown prose to one sentence per line.
 - `@cached` preserves the method signature and moves the body to `MemoizationKit.implementation`.
 - The default global cache shares one size limit across a function's cached methods, with a separate cache per container type.
 - Preserve inferred return types and allocation-free RAM hits for concrete keys with the built-in containers.
+- `ClockCache` hits are lock-free; keep the rules listed in `src/containers/clock.jl`. Task-local caches use the locked `LocalClockCache`.
 - Built-in RAM containers distinguish key types and use `hash` and `isequal`.
 - `MemoizationKit.cachekey` may merge equivalent inputs; merged calls must accept the same result and return type.
 - Compute misses outside cache locks so recursion works; concurrent misses may compute twice.
