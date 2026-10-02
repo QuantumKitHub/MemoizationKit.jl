@@ -253,11 +253,12 @@ end
 """
     cache_stats(c::AbstractCache) -> NamedTuple
 
-Return `(; hits, misses, length, currentsize, maxsize)` for `c`.
+Return `(; hits, misses, length, currentsize, maxsize, by)` for `c`, where `by` is the size
+measure (`nothing` for counting entries).
 """
 function cache_stats(c::AbstractCache)
     s = c.slots
-    return @lock s.lock (; s.hits, s.misses, length = length(s.index), s.currentsize, s.maxsize)
+    return @lock s.lock (; s.hits, s.misses, length = length(s.index), s.currentsize, s.maxsize, s.by)
 end
 
 # Compact form, also used as the header of the multi-line `show` inherited from `AbstractDict`.
