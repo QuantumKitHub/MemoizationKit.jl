@@ -34,6 +34,9 @@ const COMPUTE = [:enter_compute, :leave_compute]
 
 @testset "phases nest" begin
     @test Cached._ownerval(Traced.Scale) === Val(fullname(Traced))
+    @test Cached._owner(Traced) === Traced # outside packages, modules own their functions
+    @test Cached._owner(Base.Iterators) === Base && Cached._owner(Base) === Base
+    @test Cached._ownerval(typeof(Base.Iterators.flatten)) === Val((:Base,))
     @test ncalls(() -> Traced.f(1)) == (2, 1) && takelog!() == MISS
     @test ncalls(() -> Traced.f(1)) == (2, 0) && takelog!() == HIT
     @test ncalls(() -> uncached(Traced.f, 1)) == (2, 1) && isempty(takelog!())
@@ -62,7 +65,7 @@ allocs(f, x) = (f(x); @allocated f(x)) # in a function, as Julia 1.10 allocates 
 sumfresh(xs) = sum(fresh, xs)
 
 @testset "default hook costs nothing" begin
-    @test instrument(plain, Val(:lookup), () -> 1) == 1
+    @test instrument(plain, Val(:lookup), () -> 1, Cached._ownerval(typeof(plain))) == 1
     @test @inferred(plain(3)) == 9
     @test allocs(plain, 3) == 0
     @test @inferred(plain_nocache(3)) == 3
@@ -107,11 +110,7 @@ using TimerOutputs: TimerOutputs, TimerOutput
 
 module A
     using Cached
-    const HLOG = Symbol[]
     @cached f(x::Int) = x + 1
-    @cached h(x) = x
-    # a package's own overload per function; the timers of its owner take precedence
-    Cached.instrument(::typeof(h), ::Val, thunk) = (push!(HLOG, :hook); thunk())
 end
 
 module B
@@ -132,7 +131,6 @@ ntimed() = count(m -> m.module === Base.get_extension(Cached, :CachedTimerOutput
 
 const to = TimerOutput()
 hit_f() # compiled before enabling
-A.h(1)
 # enabling takes effect from the next top-level statement on
 enable_cache_timers!(A, to)
 
@@ -143,9 +141,6 @@ enable_cache_timers!(A, to)
     @test section_calls(to, "lookup f", "compute f") == 2
     @test B.g(1) == 1 && !haskey(to, "lookup g") && !haskey(to, "my lookup g")
     @test @inferred(A.f(1)) == 2
-    @test A.HLOG == [:hook, :hook] # before enabling
-    @test A.h(1) == 1 && A.h(2) == 2 && A.HLOG == [:hook, :hook]
-    @test section_calls(to, "lookup h") == 2 && section_calls(to, "lookup h", "compute h") == 1
     @test isempty(Test.detect_ambiguities(Cached))
 end
 
@@ -172,7 +167,6 @@ disable_cache_timers!(B)
     @test @inferred(hit_f()) == 2
     @test allocs(A.f, 1) == 0
     @test allocs(B.g, 2) == 0
-    @test A.h(1) == 1 && A.HLOG == [:hook, :hook, :hook]
 end
 
 @testset "world age" begin

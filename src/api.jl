@@ -61,19 +61,19 @@ function cache_dashboard end
 """
     enable_cache_timers!(M::Module, timer::TimerOutput = TimerOutputs.get_defaulttimer())
 
-Record the time spent in the cached functions owned by the module `M`, i.e. with
-`parentmodule(typeof(f)) === M`, in `timer`: a section per function and phase, the lookup
-with the computation of a miss nested in it (see [`Cached.instrument`](@ref)), labelled by
-[`Cached.instrument_label`](@ref). This includes methods of these functions cached in other
-modules. Enabling `M` again replaces its timer; [`disable_cache_timers!`](@ref) stops.
+Record the time spent in the cached functions owned by the package `M`, or any of its
+submodules, in `timer`: a section per function and phase, the lookup (hit or miss) with the
+computation of a miss nested in it, labelled by [`Cached.instrument_label`](@ref). This
+includes methods of these functions cached in other packages. Modules outside packages, such
+as those defined in the REPL, count separately. Enabling `M` again replaces its timer;
+[`disable_cache_timers!`](@ref) stops.
 
-Enabling and disabling define and delete a method of [`Cached.instrument`](@ref), so they
-recompile the callers of the functions of `M`, and only take effect for code that starts
+Enabling and disabling define and delete a method of an internal hook, so they recompile the callers of the functions of `M`, and only take effect for code that starts
 afterwards (from the next top-level statement on, or through `invokelatest`). They cannot be
 used during precompilation.
 
 This is a package extension: load [TimerOutputs.jl](https://github.com/KristofferC/TimerOutputs.jl)
-first, with `using TimerOutputs`. See [Instrumentation](@ref) for the details.
+first, with `using TimerOutputs`. See [Timing](@ref) for the details.
 """
 function enable_cache_timers! end
 

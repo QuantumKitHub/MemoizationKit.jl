@@ -39,9 +39,8 @@ julia --project=/tmp/runic -e 'using Pkg; Pkg.add("Runic"); using Runic; Runic.m
   and leaves `f` with its original signature, calling `Cached.call`. ExprTools does the parsing.
 - `src/call.jl`: `call` picks the value type `V` (annotation, or `return_type`) and dispatches on
   the `CacheStyle` (`NoCache`, `GlobalCache{C}`, `TaskLocalCache{C}`). The lookup and the
-  implementation call are wrapped in the `Cached.instrument(f, Val(phase), thunk, owner)` hook
-  (overloaded per owner module), whose default passes on to `instrument(f, phase, thunk)`
-  (overloaded per function), whose default `thunk()` compiles away.
+  implementation call are wrapped in the internal `instrument(f, Val(phase), thunk, owner)` hook,
+  with `owner` the package owning `f` (or its module, outside packages); its default `thunk()` compiles away.
 - `src/registry.jl`: global caches, one untyped `C{Any,Any}` per function (its budget), looked up
   lock-free in an atomically published `IdDict` snapshot.
 - `src/containers/`: `LRU` and `ClockCache`, sharing the `AbstractCache` interface. Keys are
@@ -53,7 +52,7 @@ julia --project=/tmp/runic -e 'using Pkg; Pkg.add("Runic"); using Runic; Runic.m
 - `ext/CachedTachikomaExt.jl`: the dashboard. It renders from a copy of the statistics, refreshed
   every `interval`; tests render it headlessly with Tachikoma's `TestBackend`.
 - `ext/CachedTimerOutputsExt.jl`: `enable_cache_timers!(M)` evals a method of `instrument` for
-  `Val{fullname(M)}` into the extension, `disable_cache_timers!(M)` deletes it (deleting an
+  the owner of `M` into the extension, `disable_cache_timers!(M)` deletes it (deleting an
   overwritten method would revive the old one, so enabling deletes before defining).
 
 Hot-path invariants, checked by the tests: a cache hit is fully inferred and allocates nothing.

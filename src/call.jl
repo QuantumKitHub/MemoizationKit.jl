@@ -13,34 +13,15 @@ Call the [`@cached`](@ref) function `f` without consulting or filling any cache.
 """
 uncached(f, args...; kwargs...) = implementation(f, args...; kwargs...)
 
-"""
-    Cached.instrument(f, ::Val{phase}, thunk, ::Val{owner})
-    Cached.instrument(f, ::Val{phase}, thunk)
+# Hook around the phases of a call, for `enable_cache_timers!` (TimerOutputs extension):
+# `:lookup` wraps the whole cache lookup, hit or miss, and `:compute` the implementation call,
+# nested in `:lookup` on a miss and alone under `NoCache`. `owner` is the package owning `f`,
+# folded at compile time; the extension defines a method per owner, and the default compiles away.
+@inline instrument(f, phase, thunk, owner) = thunk()
 
-Hook around the phases of a call to the [`@cached`](@ref) function `f`, returning the value of
-`thunk()`:
-
-- `Val(:lookup)` wraps the whole cache lookup, hit or miss, of a [`GlobalCache`](@ref) or
-  [`TaskLocalCache`](@ref);
-- `Val(:compute)` wraps the call of [`Cached.implementation`](@ref): nested in `:lookup` on
-  a miss, and on its own under [`NoCache`](@ref).
-
-[`uncached`](@ref) is not instrumented. Calls go to the four-argument method, with
-`owner = fullname(parentmodule(typeof(f)))` folded at compile time, which by default passes
-them on to the three-argument method, whose default is `thunk()`: the hook compiles away.
-Overload
-
-- the four-argument method per module owning the functions, which is what
-  [`enable_cache_timers!`](@ref) does: `instrument(f, phase, thunk, ::Val{(:TensorKit,)})`;
-- the three-argument method per function: `instrument(::typeof(fsbraid), ::Val{:compute}, thunk)`.
-
-Methods per module take precedence over those per function. Do not overload the
-four-argument method per function: it would be ambiguous with those per module.
-"""
-@inline instrument(f, phase, thunk, owner) = instrument(f, phase, thunk)
-@inline instrument(f, phase, thunk) = thunk()
-
-@generated _ownerval(::Type{F}) where {F} = :(Val{$(fullname(parentmodule(F)))}())
+# The package containing `m`; modules outside packages (in `Main`) own their functions themselves.
+_owner(m::Module) = (r = Base.moduleroot(m)) === Main ? m : r
+@generated _ownerval(::Type{F}) where {F} = :(Val{$(fullname(_owner(parentmodule(F))))}())
 
 """
     Cached.instrument_label(f, ::Val{phase}) -> String

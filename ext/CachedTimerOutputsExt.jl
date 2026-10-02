@@ -13,13 +13,13 @@ function Cached.enable_cache_timers!(M::Module, timer::TimerOutput = get_default
         error("`enable_cache_timers!` cannot be used during precompilation")
     # replacing the method by overwriting it would bring back the old one on deletion
     Cached.disable_cache_timers!(M)
-    @eval Cached.instrument(f, phase, thunk, ::Val{$(fullname(M))}) =
+    @eval Cached.instrument(f, phase, thunk, ::Val{$(fullname(Cached._owner(M)))}) =
         timeit(thunk, $timer, instrument_label(f, phase))
     return nothing
 end
 
 function Cached.disable_cache_timers!(M::Module)
-    m = which(instrument, Tuple{Any, Any, Any, Val{fullname(M)}})
+    m = which(instrument, Tuple{Any, Any, Any, Val{fullname(Cached._owner(M))}})
     m.module === CachedTimerOutputsExt && Base.delete_method(m)
     return nothing
 end
