@@ -51,6 +51,12 @@ julia --project=/tmp/runic -e 'using Pkg; Pkg.add("Runic"); using Runic; Runic.m
   (runtime > function > package > `[Cached]` > built-in), and `set_cache_preferences!`.
 - `src/api.jl`: `cache_info`, `empty_caches!`, `set_cache_size!`, and the `cache_dashboard` and
   `enable_cache_timers!`/`disable_cache_timers!` stubs with their error hints (registered in `__init__`).
+- `src/disk.jl`: `DiskCacheStyle` (default `NoCache()`) and `DiskCache{S}` (serializer type `S`),
+  `diskversion`, `disk_artifact`, the process-wide switch, and `_diskcall`, the miss function of
+  `get!` under a `DiskCache`; the lookup and management functions are stubs for the SQLite extension.
+- `ext/CachedSQLiteExt.jl`: the disk caches. Per function type an optional read-only artifact and
+  one SQLite database per node (WAL, `keyhash`+`key` → `value`), opened on first use; disk errors
+  warn once and the call continues. Lookup order: RAM, artifact, node database, compute.
 - `ext/CachedTachikomaExt.jl`: the dashboard. It renders from a copy of the statistics, refreshed
   every `interval`; tests render it headlessly with Tachikoma's `TestBackend`.
 - `ext/CachedTimerOutputsExt.jl`: `enable_cache_timers!(M)` evals a method of `instrument` for

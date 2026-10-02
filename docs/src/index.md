@@ -37,6 +37,8 @@ set_cache_size!(fusion, 1_000)
   [`NoCache`](@ref).
 - Default sizes are configured per package and per function through preferences; see
   [Configuration](configuration.md).
+- With SQLite.jl loaded, [`DiskCacheStyle`](@ref) keeps results on disk as well, below the
+  RAM cache, in one database per function and node; see [Disk caching](disk.md).
 - With Tachikoma.jl loaded, [`cache_dashboard`](@ref) opens a live terminal dashboard; see
   [Dashboard](dashboard.md).
 - With TimerOutputs.jl loaded, [`enable_cache_timers!`](@ref) times lookups and computations

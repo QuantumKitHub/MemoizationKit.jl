@@ -43,6 +43,20 @@ Cached.cachesize
 cache_dashboard
 ```
 
+## Disk caching
+
+```@docs
+DiskCacheStyle
+DiskCache
+Cached.diskversion
+Cached.disk_artifact
+disk_cache_info
+empty_disk_caches!
+export_disk_cache
+disable_disk_caches!
+enable_disk_caches!
+```
+
 ## Hooks and timing
 
 ```@docs

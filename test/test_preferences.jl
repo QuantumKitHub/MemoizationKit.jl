@@ -3,7 +3,7 @@ using Cached
 using Preferences
 using Aqua: Aqua
 
-const resolve = Cached._resolve_settings
+resolve(args...) = Cached._resolve_settings(args...)[(:maxsize, :by)] # the RAM settings
 caches(f) = last.(cache_info(f))
 
 @testset "resolution order" begin
@@ -109,7 +109,7 @@ with_private_preferences() do
                 "measure" => "bytes", "test_all" => Dict("maxsize" => 4),
                 "test_ambiguities" => Dict("measure" => "count")
             )
-            @test Cached._resolve_settings("test_all", Dict(), section) ==
+            @test resolve("test_all", Dict(), section) ==
                 (; maxsize = 4, by = Cached.cachesize)
             set_cache_preferences!(Aqua.test_all; maxsize = nothing) # empty sections are removed
             @test !haskey(load_preference(Aqua, "Cached"), "test_all")

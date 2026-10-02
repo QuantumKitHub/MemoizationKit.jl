@@ -33,6 +33,16 @@ set_cache_size!(fusion, 1_000)
 
 Default sizes can be configured per package and per function through `LocalPreferences.toml`; see the [configuration docs](https://lkdvos.github.io/Cached.jl/dev/configuration/).
 
+With [SQLite.jl](https://github.com/JuliaDatabases/SQLite.jl) loaded, results can also be kept on disk, below the RAM cache, in one database per function and node:
+
+```julia
+using SQLite
+Cached.DiskCacheStyle(::typeof(fusion), a, b) = DiskCache()
+disk_cache_info(fusion)   # its database on this node: path, entries, size
+```
+
+See the [disk caching docs](https://lkdvos.github.io/Cached.jl/dev/disk/).
+
 With [TimerOutputs.jl](https://github.com/KristofferC/TimerOutputs.jl) loaded, `enable_cache_timers!(MyPackage, to)` times the lookups and computations of the cached functions owned by `MyPackage` and its submodules, and `disable_cache_timers!(MyPackage)` brings back the zero-cost default. See the [timing docs](https://lkdvos.github.io/Cached.jl/dev/timing/).
 
 With [Tachikoma.jl](https://github.com/kahliburke/Tachikoma.jl) loaded, `cache_dashboard()` opens a live terminal dashboard to browse, empty and resize the caches; see the [dashboard docs](https://lkdvos.github.io/Cached.jl/dev/dashboard/).

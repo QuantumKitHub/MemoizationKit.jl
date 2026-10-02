@@ -14,6 +14,8 @@ from `LocalPreferences.toml`, next to the active project.
 | `maxsize` | integer ≥ 0 | `10000` | limit of a function's cache, all signatures together, in entries or bytes (see `measure`) |
 | `measure` | `"count"` or `"bytes"` | `"count"` | count entries, or measure values with [`Cached.cachesize`](@ref) |
 | `container` | `"ClockCache"` or `"LRU"` | `"ClockCache"` | container of the default `CacheStyle`; only in the `[Cached]` section |
+| `disk` | `true` or `false` | `true` | whether the [disk cache](disk.md) of a function with a `DiskCacheStyle` is used |
+| `disk_path` | a directory | `""` (a scratch space) | where the [disk caches](disk.md) are stored |
 
 ## Where settings come from
 
@@ -46,6 +48,7 @@ Unknown keys and invalid values are ignored with a warning.
 
 ## When changes take effect
 
+- `disk` and `disk_path` are read when a function first uses its disk cache in the session.
 - `maxsize` and `measure` are read when a function's first cache is created, so a change applies to functions that have not been called yet in the current session, and to every function after a restart.
 - `container` is a compile-time preference, because it selects the default `CacheStyle`. Changing it recompiles Cached on the next start. `GlobalCache()` and `TaskLocalCache()` use this container, so `CacheStyle` methods that return them follow the preference.
 

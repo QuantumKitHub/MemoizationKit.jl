@@ -7,7 +7,7 @@
 # The default container is a compile-time preference of Cached only, since it selects the
 # `CacheStyle` and so must be a constant.
 
-const BUILTIN_SETTINGS = (; maxsize = 10_000, measure = "count")
+const BUILTIN_SETTINGS = (; maxsize = 10_000, measure = "count", disk = true, disk_path = "")
 const SETTING_KEYS = map(string, keys(BUILTIN_SETTINGS))
 """
     Cached.cachesize(x) -> Integer
@@ -44,6 +44,8 @@ function _resolve_settings(fname::AbstractString, cached::AbstractDict, package)
     return (;
         maxsize = settings["maxsize"]::Integer,
         by = MEASURES[settings["measure"]],
+        disk = settings["disk"]::Bool,
+        disk_path = String(settings["disk_path"]),
     )
 end
 
@@ -63,6 +65,7 @@ end
 
 _isvalid(k, v) = k == "measure" ? haskey(MEASURES, v) :
     k == "container" ? v in ("ClockCache", "LRU") :
+    k == "disk" ? v isa Bool : k == "disk_path" ? v isa AbstractString :
     v isa Integer && !(v isa Bool) && v >= 0
 
 _cached_section() = Dict{String, Any}(
@@ -96,7 +99,7 @@ _functioncaches!(f) = get!(() -> FunctionCaches(f), REGISTRY.functions, f)
 Store default cache settings in `LocalPreferences.toml`: globally (section `[Cached]`), for the
 functions of `package` (`[<package>.Cached]`), or for the function `f` (`[<owner>.Cached.<f>]`,
 where `<owner>` is the package that defines `f`). Settings are `maxsize`, `measure`
-(`"count"` or `"bytes"`), and, globally only, `container` (`"ClockCache"` or `"LRU"`). A value of `nothing` removes the setting.
+(`"count"` or `"bytes"`), `disk` and `disk_path` (see the disk caching docs), and, globally only, `container` (`"ClockCache"` or `"LRU"`). A value of `nothing` removes the setting.
 
 Settings apply to functions whose first cache is created afterwards, so in practice after a
 restart; changing `container` recompiles Cached. See the configuration docs for how settings

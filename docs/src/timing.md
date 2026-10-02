@@ -7,7 +7,8 @@ CurrentModule = Cached
 With [TimerOutputs.jl](https://github.com/KristofferC/TimerOutputs.jl) loaded, [`enable_cache_timers!`](@ref) records the time spent in the cached functions of a package, in two nested sections per function:
 
 - `lookup f` wraps the whole cache lookup, hit or miss;
-- `compute f` wraps the call of the implementation: nested in `lookup f` on a miss, and on its own under [`NoCache`](@ref).
+- `compute f` wraps the call of the implementation: nested in `lookup f` on a miss, and on its own under [`NoCache`](@ref);
+- `disk f`, for functions with a [disk cache](disk.md), wraps the disk lookup after a RAM miss, with `compute f` nested in it when the disk misses too.
 
 ```@example timer
 using Cached, TimerOutputs
