@@ -129,7 +129,11 @@ Decided on 2026-10-01: per package **and** per function, through Preferences.jl.
   - A compile-time Preference switch removes the hook entirely when it is off.
   - `CachedTimerOutputsExt` implements the hook with TimerOutputs, which replaces TensorKit's `@timeit_debug` sections.
   - Packages label their functions by overriding `Cached.instrument_label(f, phase)`.
-- **`CachedTachikomaExt`**: a TUI for browsing caches, watching hit rates live, resizing, and emptying.
+- **`CachedTachikomaExt`**: a TUI for browsing caches, watching hit rates live, resizing, and emptying. Implemented as `cache_dashboard()`; the user-facing description is `docs/src/dashboard.md`.
+  - One row per cache, with Tachikoma `Gauge`s for the recent hit rate (last 10 refreshes) and the size against the limit, the container kind, and an activity sparkline.
+  - Resizing calls `set_cache_size!` with the function's current measure.
+  - It renders from a copy of the statistics, so it never holds a cache's lock across frames.
+  - Without Tachikoma, calling it gives a `MethodError` with an error hint.
 - **Disk extension**: deferred. See non-goals.
 
 ## Open questions

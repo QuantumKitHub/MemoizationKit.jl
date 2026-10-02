@@ -20,7 +20,7 @@ using Cached
 end
 
 fusion(1, 2)              # computed
-fusion(1, 2)              # looked up in a typed ClockCache{Tuple{Int, Int, @NamedTuple{normalize::Bool}}, V}
+fusion(1, 2)              # looked up in fusion's cache; the result is still inferred
 uncached(fusion, 1, 2)    # bypasses the cache
 
 # choose the strategy per function and argument type
