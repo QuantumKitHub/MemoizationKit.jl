@@ -77,7 +77,7 @@ Cached provides its own containers, so it no longer depends on LRUCache.jl.
 Both implement the same small interface: `get!`, `get`, `haskey`, `empty!`, `resize!`, `length`, and hit/miss statistics.
 
 - **`LRU{K,V}`** is array-backed. It uses a `Dict` index, slots stored in vectors, and `prev`/`next` stored as integer vectors. Nodes are never allocated, and eviction is exact LRU.
-- **The index is a `Dict{StoredKey,Int}`.** Each `StoredKey` holds the key (as `Any`) and its hash. Lookups probe it with a concretely typed `ProbeKey{K}`, whose `isequal` checks `s.key isa K` before comparing, so the comparison is static and the key is never boxed.
+- **The index is a `Dict{Key{Any},Int}`.** Each stored `Key{Any}` holds the key and its hash. Lookups probe it with a concretely typed `Key{K}`, whose `isequal` checks `s.key isa K` before comparing, so the comparison is static and the key is never boxed. A `Key{Any}` cannot serve as the probe: storing the key in an `Any` field boxes it (96 B per lookup on TensorKit-like keys).
   - This holds for `C{Any,Any}` as well, where a plain `Dict{Any,…}` would allocate on every hit.
   - Eviction never re-hashes, because the hash is stored.
   - Keys of different types are different entries, even when `isequal` (`f(3)` and `f(3.0)`). Lookups on a typed cache convert the key to `K` first.

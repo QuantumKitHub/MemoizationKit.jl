@@ -12,53 +12,50 @@ Keys of different types never match, even when they are `isequal`: in a cache wi
 abstract key type, `1` and `1.0` are different entries. Lookups with a key that is not of type
 `K` convert it to `K` first.
 
-Subtypes provide the fields `index::Dict{StoredKey,Int}`, `keys::Vector{StoredKey}`, `vals`,
+Subtypes provide the fields `index::Dict{Key{Any},Int}`, `keys::Vector{Key{Any}}`, `vals`,
 `sizes`, `currentsize`, `maxsize`, `by`, `hits`, `misses` and `lock`, and implement the eviction
 policy through `_touch!`, `_evict_one!`, `_place!` and `_remove!`.
 """
 abstract type AbstractCache{K, V} <: AbstractDict{K, V} end
 
-# Keys are stored together with their hash, so that eviction never re-hashes them. Lookups probe
-# the index with a `ProbeKey` of the key's concrete type: comparing it with a stored key checks
-# the type first, so the comparison is static and the key is never boxed, also when the cache
-# has an abstract key type (as the caches of `@cached` functions do).
-struct StoredKey
-    key::Any
-    hash::UInt
-end
-struct ProbeKey{K}
+# Keys are stored as `Key{Any}`, together with their hash, so that eviction never re-hashes them.
+# Lookups probe the index with a `Key{K}` of the key's concrete type: comparing it with a stored
+# key checks the type first, so the comparison is static and the key is never boxed, also when
+# the cache has an abstract key type (as the caches of `@cached` functions do). A probe cannot
+# be a `Key{Any}` itself: storing the key in an `Any` field would box it.
+struct Key{K}
     key::K
     hash::UInt
 end
-ProbeKey(k) = ProbeKey(k, hash(k))
-Base.hash(k::Union{StoredKey, ProbeKey}, h::UInt) = hash(k.hash, h)
-Base.isequal(p::ProbeKey{K}, s::StoredKey) where {K} = p.hash == s.hash && s.key isa K && isequal(p.key, s.key::K)
-Base.isequal(a::StoredKey, b::StoredKey) = a.hash == b.hash && typeof(a.key) === typeof(b.key) && isequal(a.key, b.key)
+Key(k) = Key(k, hash(k))
+Base.hash(k::Key, h::UInt) = hash(k.hash, h)
+Base.isequal(p::Key{K}, s::Key{Any}) where {K} = p.hash == s.hash && s.key isa K && isequal(p.key, s.key::K)
+Base.isequal(a::Key{Any}, b::Key{Any}) = a.hash == b.hash && typeof(a.key) === typeof(b.key) && isequal(a.key, b.key)
 
 # The probe for a key that is inserted: converted to `K`, which throws if that is not possible.
-_newkey(::AbstractCache{K}, key) where {K} = ProbeKey(key isa K ? key : convert(K, key)::K)
+_newkey(::AbstractCache{K}, key) where {K} = Key(key isa K ? key : convert(K, key)::K)
 
 # The slot of `key` in `c`, or 0. A key that cannot be converted to `K` is not in the cache.
 function _slot(c::AbstractCache{K}, key) where {K}
-    key isa K && return get(c.index, ProbeKey(key), 0)
+    key isa K && return get(c.index, Key(key), 0)
     k = try
         convert(K, key)::K
     catch
         return 0
     end
-    return get(c.index, ProbeKey(k), 0)
+    return get(c.index, Key(k), 0)
 end
 
 _entrysize(c::AbstractCache, v) = c.by === nothing ? 1 : Int(c.by(v))::Int
 
 # Insert a new key (not currently present), evicting until it fits.
 # Values larger than the whole cache are not stored.
-function _insert!(c::AbstractCache, p::ProbeKey, v, sz::Int)
+function _insert!(c::AbstractCache, p::Key, v, sz::Int)
     sz > c.maxsize && return c
     while c.currentsize + sz > c.maxsize && !isempty(c.index)
         _evict_one!(c)
     end
-    k = StoredKey(p.key, p.hash)
+    k = Key{Any}(p.key, p.hash)
     i = isempty(c.free) ? _newslot!(c, k, v, sz) : _reuseslot!(c, pop!(c.free), k, v, sz)
     c.index[k] = i
     _place!(c, i)

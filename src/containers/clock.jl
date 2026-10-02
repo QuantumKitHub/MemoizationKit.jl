@@ -10,8 +10,8 @@ never hit again are evicted first.
 all entries.
 """
 mutable struct ClockCache{K, V} <: AbstractCache{K, V}
-    const index::Dict{StoredKey, Int}
-    const keys::Vector{StoredKey}
+    const index::Dict{Key{Any}, Int}
+    const keys::Vector{Key{Any}}
     const vals::Vector{V}
     const sizes::Vector{Int}
     const ref::Vector{Bool}
@@ -29,7 +29,7 @@ end
 function ClockCache{K, V}(; maxsize::Integer = 10_000, by = nothing) where {K, V}
     maxsize >= 0 || throw(ArgumentError("maxsize must be non-negative"))
     return ClockCache{K, V}(
-        Dict{StoredKey, Int}(), StoredKey[], V[], Int[], Bool[], Bool[], Int[],
+        Dict{Key{Any}, Int}(), Key{Any}[], V[], Int[], Bool[], Bool[], Int[],
         0, 0, maxsize, by, 0, 0, ReentrantLock()
     )
 end

@@ -30,7 +30,7 @@ _key(args::Tuple, kw::NamedTuple) = (args..., kw)
 _call(f, ::NoCache, ::Type, key, args, kw) = implementation(f, args...; kw...)
 
 # The cache holds keys and values of any type; the assertion recovers the value type, so that
-# calls stay inferred. Lookups do not box the key (see `ProbeKey`).
+# calls stay inferred. Lookups do not box the key (see `Key`).
 function _call(f::F, ::GlobalCache{C}, ::Type{V}, key, args, kw) where {F, C, V}
     cache = globalcache(f, C{Any, Any})::C{Any, Any}
     return get!(() -> implementation(f, args...; kw...), cache, key)::V
