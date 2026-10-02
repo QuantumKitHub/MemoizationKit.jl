@@ -42,3 +42,12 @@ set_cache_preferences!
 Cached.cachesize
 cache_dashboard
 ```
+
+## Hooks and timing
+
+```@docs
+Cached.instrument
+Cached.instrument_label
+enable_cache_timers!
+disable_cache_timers!
+```

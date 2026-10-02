@@ -32,6 +32,8 @@ set_cache_size!(fusion, 1_000)
 
 Default sizes can be configured per package and per function through `LocalPreferences.toml`; see the [configuration docs](https://lkdvos.github.io/Cached.jl/dev/configuration/).
 
+With [TimerOutputs.jl](https://github.com/KristofferC/TimerOutputs.jl) loaded, `enable_cache_timers!(MyPackage, to)` times the lookups and computations of the cached functions owned by `MyPackage`, and `disable_cache_timers!(MyPackage)` brings back the zero-cost default; packages can hook in their own tools through `Cached.instrument`. See the [instrumentation docs](https://lkdvos.github.io/Cached.jl/dev/instrumentation/).
+
 With [Tachikoma.jl](https://github.com/kahliburke/Tachikoma.jl) loaded, `cache_dashboard()` opens a live terminal dashboard to browse, empty and resize the caches; see the [dashboard docs](https://lkdvos.github.io/Cached.jl/dev/dashboard/).
 
 ```text

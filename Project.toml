@@ -12,12 +12,15 @@ Preferences = "21216c6a-2e73-6563-6e65-726566657250"
 
 [weakdeps]
 Tachikoma = "468859d6-42d8-48b7-8ad9-1d312e0e3b0a"
+TimerOutputs = "a759f4b9-e2f1-59dc-863e-4aeb61b1ea8f"
 
 [extensions]
 CachedTachikomaExt = "Tachikoma"
+CachedTimerOutputsExt = "TimerOutputs"
 
 [compat]
 ExprTools = "0.1"
 Preferences = "1.4"
 Tachikoma = "2.7"
+TimerOutputs = "0.5, 1"
 julia = "1.10"

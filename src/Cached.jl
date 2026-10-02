@@ -4,11 +4,11 @@ export @cached, uncached
 export CacheStyle, NoCache, GlobalCache, GlobalLRUCache, TaskLocalCache
 export LRU, ClockCache
 export cache_info, empty_caches!, set_cache_size!, set_cache_preferences!
-export cache_dashboard
+export cache_dashboard, enable_cache_timers!, disable_cache_timers!
 
 # documented API that is used qualified, e.g. by overloading `Cached.cachesize`
 @static if VERSION >= v"1.11.0-DEV.469"
-    eval(Meta.parse("public AbstractCache, cache_stats, cachesize, implementation"))
+    eval(Meta.parse("public AbstractCache, cache_stats, cachesize, implementation, instrument, instrument_label"))
 end
 
 using Base: @lock
@@ -28,7 +28,7 @@ include("macro.jl")
 
 function __init__()
     isdefined(Base.Experimental, :register_error_hint) &&
-        Base.Experimental.register_error_hint(_dashboard_hint, MethodError)
+        Base.Experimental.register_error_hint(_extension_hint, MethodError)
     return nothing
 end
 

@@ -38,3 +38,6 @@ set_cache_size!(fusion, 1_000)
   [Configuration](configuration.md).
 - With Tachikoma.jl loaded, [`cache_dashboard`](@ref) opens a live terminal dashboard; see
   [Dashboard](dashboard.md).
+- Lookups and computations can be timed, per module with TimerOutputs.jl through [`enable_cache_timers!`](@ref)
+  or with your own tools through the [`Cached.instrument`](@ref) hook; see
+  [Instrumentation](instrumentation.md).
