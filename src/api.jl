@@ -56,8 +56,13 @@ statistics are re-read every `interval` seconds, and only functions whose name c
 The dashboard is a package extension: load [Tachikoma.jl](https://github.com/kahliburke/Tachikoma.jl)
 first, with `using Tachikoma`. See [Dashboard](@ref) for the keybindings.
 """
-function cache_dashboard(; kwargs...)
-    ext = Base.get_extension(@__MODULE__, :CachedTachikomaExt)
-    ext === nothing && error("cache_dashboard requires Tachikoma.jl; run `using Tachikoma` first")
-    return Base.invokelatest(ext.dashboard; kwargs...)
+function cache_dashboard end
+
+# Without the extension `cache_dashboard` has no methods; say how to get them. Calls with
+# keywords fail on `Core.kwcall`, with the function as the second argument.
+function _dashboard_hint(io, exc, argtypes, kwargs)
+    f = exc.f === Core.kwcall && length(exc.args) >= 2 ? exc.args[2] : exc.f
+    f === cache_dashboard && Base.get_extension(@__MODULE__, :CachedTachikomaExt) === nothing &&
+        print(io, "\n`cache_dashboard` needs Tachikoma.jl: run `using Tachikoma` first.")
+    return nothing
 end

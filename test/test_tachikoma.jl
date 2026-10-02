@@ -1,15 +1,45 @@
 using Test
 using Cached
 
-@testset "dashboard needs Tachikoma" begin
-    if Base.get_extension(Cached, :CachedTachikomaExt) === nothing
-        @test_throws r"using Tachikoma" cache_dashboard()
+@testset "error hint without Tachikoma" begin
+    # a fresh process with Cached only, since this one loads Tachikoma
+    mktempdir() do env
+        code = """
+        using Pkg
+        Pkg.activate($(repr(env)); io = devnull)
+        Pkg.develop(path = $(repr(pkgdir(Cached))); io = devnull)
+        using Cached
+        for call in (() -> cache_dashboard(), () -> cache_dashboard(; interval = 2))
+            try
+                call()
+            catch e
+                println(e isa MethodError, " ", sprint(showerror, e))
+            end
+        end
+        """
+        cmd = addenv(
+            `$(Base.julia_cmd()) --startup-file=no -e $code`,
+            "JULIA_PKG_OFFLINE" => "true", "JULIA_LOAD_PATH" => join(["@", "@stdlib"], Sys.iswindows() ? ";" : ":"), "JULIA_PROJECT" => nothing,
+        )
+        out = read(cmd, String)
+        @test count("true MethodError: no method matching cache_dashboard(", out) == 2
+        @test count("`cache_dashboard` needs Tachikoma.jl: run `using Tachikoma` first", out) == 2
     end
 end
 
 using Tachikoma: Tachikoma, TestBackend, KeyEvent, Rect, Frame, GraphicsRegion, PixelSnapshot, find_text, row_text
 
 const Ext = Base.get_extension(Cached, :CachedTachikomaExt)
+
+@testset "no hint with Tachikoma loaded" begin
+    @test hasmethod(Cached.cache_dashboard, Tuple{})
+    e = try
+        cache_dashboard(1)
+    catch e
+        e
+    end
+    @test e isa MethodError && !occursin("needs Tachikoma", sprint(showerror, e))
+end
 
 # unique names, as other test files may share this process and its global caches
 @cached dash_square(x) = x^2

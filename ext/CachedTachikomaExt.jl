@@ -74,7 +74,7 @@ end
 
 Tachikoma.should_quit(m::Dashboard) = m.quit
 
-function dashboard(; interval::Real = 1.0, filter::AbstractString = "")
+function Cached.cache_dashboard(; interval::Real = 1.0, filter::AbstractString = "")
     m = Dashboard(; interval, filter)
     refresh!(m)
     app(m; fps = 20)

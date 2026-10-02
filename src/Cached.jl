@@ -26,4 +26,10 @@ include("call.jl")
 include("api.jl")
 include("macro.jl")
 
+function __init__()
+    isdefined(Base.Experimental, :register_error_hint) &&
+        Base.Experimental.register_error_hint(_dashboard_hint, MethodError)
+    return nothing
+end
+
 end # module Cached
