@@ -29,19 +29,23 @@ _key(args::Tuple, kw::NamedTuple) = (args..., kw)
 
 _call(f, ::NoCache, ::Type, key, args, kw) = implementation(f, args...; kw...)
 
-function _call(f::F, ::GlobalCache{C}, ::Type{V}, key::K, args, kw) where {F, C, V, K}
-    cache = globalcache(f, C{K, V})::C{K, V}
-    return get!(() -> implementation(f, args...; kw...), cache, key)
+# The cache holds keys and values of any type; the assertion recovers the value type, so that
+# calls stay inferred. Lookups do not box the key (see `Key`).
+function _call(f::F, ::GlobalCache{C}, ::Type{V}, key, args, kw) where {F, C, V}
+    cache = globalcache(f, C{Any, Any})::C{Any, Any}
+    return get!(() -> implementation(f, args...; kw...), cache, key)::V
 end
 
 function _call(f::F, ::TaskLocalCache{C}, ::Type{V}, key::K, args, kw) where {F, C, V, K}
     T = _localtype(C, K, V)
     table = get!(IdDict{Any, Any}, task_local_storage(), :__Cached_tasklocal__)::IdDict{Any, Any}
     cache = get!(() -> _newlocal(f, T), table, (f, T))::T
-    return get!(() -> implementation(f, args...; kw...), cache, key)
+    return get!(() -> implementation(f, args...; kw...), cache, key)::V
 end
 
-_localtype(C, K, V) = C isa UnionAll ? C{K, V} : C
+# One untyped cache per function for the containers of Cached; other dictionaries (e.g. `Dict`)
+# would box untyped keys, so they get one typed dictionary per key and value type.
+_localtype(C, K, V) = C isa UnionAll ? (C <: AbstractCache ? C{Any, Any} : C{K, V}) : C
 # Task-local caches follow the size settings of `f`, but are not registered.
 function _newlocal(f, ::Type{T}) where {T <: AbstractCache}
     fc = @lock REGISTRY.lock _functioncaches!(f)

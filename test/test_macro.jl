@@ -81,6 +81,7 @@ Cached.CacheStyle(::typeof(tasklocal), x::Symbol) = TaskLocalCache{Dict}()
 @cached manytypes(x) = counting(x)
 
 caches(f) = last.(cache_info(f))
+rettype(f, T) = only(Base.return_types(f, T)) # `Base.infer_return_type` needs Julia 1.11
 
 # returns (result, number of implementation calls)
 function ncalls(f)
@@ -113,13 +114,16 @@ end
     @test converted(1) === 1.0
     @test dependent(1) == [1] && dependent(1) isa Vector{Int}
     @test dependent(1.5) isa Vector{Float64}
-    @test ClockCache{Tuple{Int}, Vector{Int}} in typeof.(caches(dependent))
-    @test typeof(only(caches(converted))) == ClockCache{Tuple{Int}, Float64}
+    # one untyped cache per function; the value type is recovered at the call
+    @test only(caches(dependent)) isa ClockCache{Any, Any}
+    @test rettype(dependent, Tuple{Int}) == Vector{Int}
+    @test rettype(dependent, Tuple{Float64}) == Vector{Float64}
+    @test rettype(converted, Tuple{Int}) == Float64
     # without annotation the value type is inferred, falling back to `Any` if not concrete
-    @test ClockCache{Tuple{Int}, Int} in typeof.(caches(basic))
-    unstable(1)
-    unstable(-1)
-    @test typeof(only(caches(unstable))) == ClockCache{Tuple{Int}, Any}
+    @test rettype(basic, Tuple{Int}) == Int
+    @test unstable(1) === 1 && unstable(-1) == "negative"
+    @test rettype(unstable, Tuple{Int}) == Any
+    @test length(only(caches(unstable))) == 2
 end
 
 @testset "type stability" begin
@@ -152,12 +156,12 @@ end
     @test occursin("ClashA.f =>", sprint(show, cache_info(ClashA.f)))
     @test occursin("ClashB.f =>", sprint(show, cache_info(ClashB.f)))
 
-    # methods of one function cached from different modules share its caches by key type
+    # methods of one function cached from different modules share its cache
     @test Shared.fusion(SectorsA.IrrepA()) === :A
     @test Shared.fusion(SectorsB.IrrepB()) === :B
     @test uncached(Shared.fusion, SectorsB.IrrepB()) === :B
     @test Shared.fusion(1) == 1 # the uncached method is untouched
-    @test Set(keytype.(caches(Shared.fusion))) == Set([Tuple{SectorsA.IrrepA}, Tuple{SectorsB.IrrepB}])
+    @test length(only(caches(Shared.fusion))) == 2
 end
 
 @testset "recursion" begin
@@ -196,19 +200,20 @@ end
     end
     @test Cached.cache_stats(only(caches(sized))).currentsize == 100
 
-    set_max_subcaches!(manytypes, 2)
-    manytypes(1)
-    manytypes(1.0)
-    manytypes(:a) # drops the Int cache
-    @test [keytype(c) for c in caches(manytypes)] == [Tuple{Float64}, Tuple{Symbol}]
-    @test ncalls(() -> manytypes(1)) == (1, 1)
+    # the limit is a budget for the function as a whole, all signatures together
+    set_cache_size!(manytypes, 3)
+    foreach(manytypes, (1, 1.0, :a, "a", 'a'))
+    @test length(only(caches(manytypes))) == 3
+    # keys of different types are different entries, even when `isequal`
+    @test ncalls(() -> manytypes(2)) == (2, 1) && ncalls(() -> manytypes(2.0)) == (2.0, 1)
+    @test ncalls(() -> manytypes(2.0)) == (2.0, 0) && manytypes(2) isa Int
 
     empty_caches!(sized)
     @test length(only(caches(sized))) == 0
     @test ncalls(() -> basic(3)) == (9, 0)
     empty_caches!()
     @test ncalls(() -> basic(3)) == (9, 1)
-    @test occursin("ClockCache{Tuple{Int64}, Int64}(1/10000 entries", sprint(show, cache_info(basic)))
+    @test occursin("ClockCache{Any, Any}(1/10000 entries", sprint(show, cache_info(basic)))
     @test all(p -> first(p) === basic, cache_info(basic))
     @test length(cache_info()) >= length(cache_info(basic)) + length(cache_info(sized))
 end

@@ -10,8 +10,8 @@ never hit again are evicted first.
 all entries.
 """
 mutable struct ClockCache{K, V} <: AbstractCache{K, V}
-    const index::Dict{K, Int}
-    const keys::Vector{K}
+    const index::Dict{Key{Any}, Int}
+    const keys::Vector{Key{Any}}
     const vals::Vector{V}
     const sizes::Vector{Int}
     const ref::Vector{Bool}
@@ -29,7 +29,7 @@ end
 function ClockCache{K, V}(; maxsize::Integer = 10_000, by = nothing) where {K, V}
     maxsize >= 0 || throw(ArgumentError("maxsize must be non-negative"))
     return ClockCache{K, V}(
-        Dict{K, Int}(), K[], V[], Int[], Bool[], Bool[], Int[],
+        Dict{Key{Any}, Int}(), Key{Any}[], V[], Int[], Bool[], Bool[], Int[],
         0, 0, maxsize, by, 0, 0, ReentrantLock()
     )
 end
@@ -82,5 +82,5 @@ end
 
 # Entries in slot order. Call with the lock held.
 function _pairs(c::ClockCache{K, V}) where {K, V}
-    return Pair{K, V}[c.keys[i] => c.vals[i] for i in eachindex(c.keys) if c.live[i]]
+    return Pair{K, V}[c.keys[i].key::K => c.vals[i] for i in eachindex(c.keys) if c.live[i]]
 end

@@ -1,19 +1,19 @@
 # Registry of the global caches.
 #
-# Lookups read an immutable snapshot of `table` without locking; creating a cache copies the
-# snapshot under `lock`. New caches are rare (once per function and key/value type), so the
-# copy is cheap compared to taking a lock on every call.
+# Each function has a single cache `C{Any,Any}` per container type `C` (normally just one), so
+# its `maxsize` is the budget of the whole function. Lookups read an immutable snapshot of
+# `table` without locking; creating a cache copies the snapshot under `lock`. New caches are
+# rare (once per function), so the copy is cheap compared to taking a lock on every call.
 
-# Per-function limits and the function's caches, oldest first.
+# Per-function limits and the function's caches.
 mutable struct FunctionCaches
     maxsize::Int
     by::Any
-    maxsubcaches::Int
     const caches::Vector{AbstractCache}
 end
 
 mutable struct Registry
-    @atomic table::IdDict{Any, Any} # _tablekey(f, C{K,V}) => C{K,V}; never mutated once published
+    @atomic table::IdDict{Any, Any} # _tablekey(f, C) => C; never mutated once published
     const functions::IdDict{Any, FunctionCaches}
     const lock::ReentrantLock
 end
@@ -36,7 +36,6 @@ end
         fc = _functioncaches!(f)
         c = T(; maxsize = fc.maxsize, by = fc.by)
         push!(fc.caches, c)
-        length(fc.caches) > fc.maxsubcaches && popfirst!(fc.caches)
         _publish!()
         c
     end
