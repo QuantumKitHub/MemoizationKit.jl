@@ -1,25 +1,35 @@
 """
     cache_info() -> Vector{Pair{Any, AbstractCache}}
     cache_info(f) -> Vector{Pair{Any, AbstractCache}}
+    cache_info(m::Module) -> Vector{Pair{Any, AbstractCache}}
 
-The global caches, or the global caches of `f`, as `f => cache` pairs. A function has one
-cache, holding all its signatures (or one per container type, if its [`CacheStyle`](@ref)
-selects several). The caches are live: they show their size and hit statistics, and can be
-inspected, emptied or resized directly. Task-local caches are not included.
+The global caches, those of `f`, or those of the functions owned by the module `m` or its
+submodules, as `f => cache` pairs. A function has one cache, holding all its signatures (or
+one per container type, if its [`CacheStyle`](@ref) selects several), and is owned by the
+module that defines it, `parentmodule(typeof(f))`, wherever its `@cached` methods are written.
+The caches are live: they show their size and hit statistics, and can be inspected, emptied or
+resized directly. Task-local caches are not included.
 """
-cache_info() = @lock REGISTRY.lock Pair{Any, AbstractCache}[f => c for (f, fc) in REGISTRY.functions for c in fc.caches]
-cache_info(f) = @lock REGISTRY.lock Pair{Any, AbstractCache}[f => c for c in _caches(f)]
+cache_info() = _cache_info(Returns(true))
+cache_info(f) = _cache_info(g -> g === f)
+cache_info(m::Module) = _cache_info(g -> _within(parentmodule(typeof(g)), m))
 
-_caches(f) = (fc = get(REGISTRY.functions, f, nothing); fc === nothing ? AbstractCache[] : fc.caches)
+_cache_info(select) = @lock REGISTRY.lock Pair{Any, AbstractCache}[f => c for (f, fc) in REGISTRY.functions if select(f) for c in fc.caches]
+_within(n::Module, m::Module) = n === m || ((p = parentmodule(n)) !== n && _within(p, m))
 
 """
     empty_caches!()
     empty_caches!(f)
+    empty_caches!(m::Module)
 
-Empty every global cache, or the global caches of `f`. Statistics are kept.
+Empty every global cache, those of `f`, or those of the functions owned by the module `m` or
+its submodules (see [`cache_info`](@ref)). Statistics are kept.
 """
-empty_caches!() = (@lock REGISTRY.lock foreach(fc -> foreach(empty!, fc.caches), values(REGISTRY.functions)); nothing)
-empty_caches!(f) = (@lock REGISTRY.lock foreach(empty!, _caches(f)); nothing)
+empty_caches!() = _empty!(cache_info())
+empty_caches!(f) = _empty!(cache_info(f))
+empty_caches!(m::Module) = _empty!(cache_info(m))
+
+_empty!(caches) = (foreach(empty! ∘ last, caches); nothing)
 
 """
     set_cache_size!(f, maxsize::Integer; by = nothing)

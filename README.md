@@ -27,6 +27,7 @@ uncached(fusion, 1, 2)    # bypasses the cache
 Cached.CacheStyle(::typeof(fusion), a::Int, b::Int) = TaskLocalCache{LRU}()
 
 cache_info(fusion)        # hit/miss statistics
+cache_info(MyPackage)     # ... of all cached functions of a module, empty_caches! likewise
 set_cache_size!(fusion, 1_000)
 ```
 
