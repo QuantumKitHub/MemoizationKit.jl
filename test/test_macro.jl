@@ -51,6 +51,16 @@ module ClashB
     @cached f(x) = (:B, x)
 end
 
+# a module with a submodule, both owning cached functions
+module Outer
+    using Cached
+    @cached a(x) = x
+    module Inner
+        using Cached
+        @cached b(x) = x
+    end
+end
+
 # two modules caching their own methods of one shared function
 module Shared
     fusion(x) = x
@@ -224,6 +234,21 @@ end
     @test occursin("ClockCache{Any, Any}(1/10000 entries", sprint(show, cache_info(basic)))
     @test all(p -> first(p) === basic, cache_info(basic))
     @test length(cache_info()) >= length(cache_info(basic)) + length(cache_info(sized))
+end
+
+@testset "caches per module" begin
+    Outer.a(1), Outer.Inner.b(1), Shared.fusion(SectorsA.IrrepA())
+    owners(m) = Set(first.(cache_info(m)))
+    @test owners(Outer) == Set([Outer.a, Outer.Inner.b]) # including submodules
+    @test owners(Outer.Inner) == Set([Outer.Inner.b])
+    @test owners(Shared) == Set([Shared.fusion]) # owned where defined, not where cached
+    @test isempty(cache_info(SectorsA))
+    @test issubset(owners(Outer), owners(@__MODULE__))
+
+    empty_caches!(Outer.Inner)
+    @test isempty(only(caches(Outer.Inner.b))) && length(only(caches(Outer.a))) == 1
+    empty_caches!(Outer)
+    @test isempty(only(caches(Outer.a)))
 end
 
 @testset "concurrency" begin
