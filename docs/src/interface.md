@@ -81,7 +81,7 @@ sort!(collect(keys(c))), Cached.cache_stats(c)
 
 # output
 
-([2, 3], (hits = 1, misses = 0, length = 2, currentsize = 2, maxsize = 2))
+([2, 3], (hits = 1, misses = 0, length = 2, currentsize = 2, maxsize = 2, by = nothing))
 ```
 
 `forget!` takes linear time here, which is fine for evictions (the victim is first in the queue)
