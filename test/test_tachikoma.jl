@@ -77,6 +77,9 @@ dash_two(1.0)
 @testset "formatting" begin
     @test Ext._truncate("abcdefghij", 7) == "abcd…ij"
     @test Ext._truncate("abc", 7) == "abc"
+    # by display width: wide characters take two columns
+    @test Ext._truncate("漢字漢字漢字", 7) == "漢字…字" && textwidth(Ext._truncate("漢字漢字漢字", 8)) <= 8
+    @test Ext._truncate("abc", 1) == "…" && Ext._truncate("abc", 0) == ""
     @test Ext._short(216, false) == "216" && Ext._short(10_000, false) == "10k" && Ext._short(1234, false) == "1.2k"
     @test Ext._short(1023, true) == "1023B" && Ext._short(1024^2, true) == "1.0MiB" && Ext._short(64 * 1024^3, true) == "64GiB"
 end
@@ -96,7 +99,7 @@ end
     @test occursin(r"\d+B/977KiB", line(tb, repr(dash_bytes)))
     @test find_text(tb, "Activity") !== nothing && find_text(tb, "q quit") !== nothing
     # no recent lookups yet; the lifetime rate is in the detail panel
-    @test occursin(r"···  +- ", line(tb, repr(dash_square)))
+    @test occursin("░░░░░░-░░░░░░", line(tb, repr(dash_square)))
     select!(m, dash_square)
     @test find_text(draw(m; width = 160), "lifetime 33.3%") !== nothing # 2 hits, 4 misses
 
@@ -250,7 +253,7 @@ end
         r = step!(0, 10)
     end
     @test rate(r) == 0.0
-    @test occursin("  0%", line(draw(m), repr(dash_rate)))
+    @test occursin("░0%░", line(draw(m), repr(dash_rate)))
     @test occursin("lifetime", line(draw(m), "hit rate: recent 0.0%"))
 
     # and recovers when hits resume
@@ -263,5 +266,19 @@ end
     for _ in 1:Ext.WINDOW
         r = step!(0, 0)
     end
-    @test isnan(rate(r)) && occursin(r"···  +- ", line(draw(m), repr(dash_rate)))
+    @test isnan(rate(r)) && occursin("░░░░░░-░░░░░░", line(draw(m), repr(dash_rate)))
+end
+
+@cached 漢字の長い関数名前漢字の長い関数名前(x) = x
+
+@testset "wide characters in names" begin
+    漢字の長い関数名前漢字の長い関数名前(1)
+    m = dashboard("漢字")
+    for width in (40, 160)
+        tb = draw(m; width)
+        namewidth = clamp(textwidth(only(m.lines).label), 20, width - 1 - (width < 58 ? 14 : 14 + 23 + 6 + 9))
+        row = row_text(tb, 3) # the only row; wide characters are followed by a padding cell
+        # the gauge starts right after the name column, as in the header
+        @test textwidth(row[1:(findfirst('░', row) - 1)]) + 1 == column(tb, "Hit rate") == namewidth + 3
+    end
 end

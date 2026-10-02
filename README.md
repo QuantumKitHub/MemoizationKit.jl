@@ -37,9 +37,9 @@ With [Tachikoma.jl](https://github.com/kahliburke/Tachikoma.jl) loaded, `cache_d
 ```text
  4 caches, 383 entries
  Name ▲               Hit rate      Size                   Kind  Activity
- Main.fib             █████▍··  67% ········ 61/10k        LRU   ████████
-▌Main.fsymbol         █████▍··  67% ▎······· 276/10k       Clock ▄█▆▃▇▅▂▆
- Main.label           ████████ 100% ········ 6/10k         Clock ▇█ ▁▃▄▅▇
- Main.matrix          ████████ 100% █▍······ 175KiB/1.0MiB Clock ▆▇█▁▂▃▄▄
- ↑↓ select  ⏎ resize  e empty  s sort  r reverse  / filter  q quit
+ Main.fib             █████67%▋░░░░ ▏░░░░░░░61/10k░░░░░░░░ LRU   ████████
+▌Main.fsymbol         █████67%▊░░░░ ▋░░░░░░276/10k░░░░░░░░ Clock ▄█▆▃▇▅▂▆
+ Main.label           ████100%█████ ▏░░░░░░░6/10k░░░░░░░░░ Clock ▇█ ▁▃▄▅▇
+ Main.matrix          ████100%█████ ███▊175KiB/1.0MiB░░░░░ Clock ▆▇█▁▂▃▄▄
+ ↑↓ select  ⏎ resize  e empty  s sort  r reverse  / filter  g refresh  q quit
 ```

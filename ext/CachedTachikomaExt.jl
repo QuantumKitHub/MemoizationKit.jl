@@ -9,7 +9,7 @@ module CachedTachikomaExt
 using Cached: Cached, AbstractCache, cache_info, cache_stats, set_cache_size!
 using Tachikoma: Tachikoma, Model, Frame, KeyEvent, Rect, Layout, Vertical, Fixed, Fill,
     split_layout, render, set_string!, set_char!, tstyle, center, right, Block, StatusBar, Span,
-    Sparkline, TextInput, BARS_H, handle_key!, text, app
+    Sparkline, Gauge, Paragraph, TextInput, handle_key!, text, app
 
 const STATS = @NamedTuple{hits::Int, misses::Int, length::Int, currentsize::Int, maxsize::Int}
 const HISTORY = 120 # refreshes kept for the sparklines
@@ -91,7 +91,7 @@ function refresh!(m::Dashboard, now = time())
     trends = IdDict{AbstractCache, Trend}()
     m.rows = map(cache_info()) do (f, c)
         s = STATS(cache_stats(c))
-        kind = c isa Cached.LRU ? "LRU" : c isa Cached.ClockCache ? "Clock" : string(nameof(typeof(c)))
+        kind = c isa Cached.ClockCache ? "Clock" : string(nameof(typeof(c)))
         Row(f, c, repr(f), kind, c.by !== nothing, s, trend!(trends, m.trends, c, s, elapsed))
     end
     m.trends = trends # drops the trends of caches that are gone
@@ -228,31 +228,29 @@ function Tachikoma.view(m::Dashboard, f::Frame)
     return nothing
 end
 
-# Optional columns, dropped from the right as the terminal narrows: header, width, cell.
+# Optional columns, dropped from the right as the terminal narrows: header, width, and a
+# function drawing the cell into a rect.
 const COLUMNS = (
-    ("Hit rate", 13, (buf, x, y, r, m) -> draw_hitrate(buf, x, y, r)),
-    ("Size", 22, (buf, x, y, r, m) -> draw_size(buf, x, y, r, m)),
-    ("Kind", 5, (buf, x, y, r, m) -> set_string!(buf, x, y, r.kind, tstyle(:text_dim))),
-    ("Activity", 8, (buf, x, y, r, m) -> render(Sparkline(r.trend.rates; style = tstyle(:accent)), Rect(x, y, 8, 1), buf)),
+    ("Hit rate", 13, (rect, buf, r, m) -> render(hitrate_gauge(r), rect, buf)),
+    ("Size", 22, (rect, buf, r, m) -> render(size_gauge(r, m), rect, buf)),
+    ("Kind", 5, (rect, buf, r, m) -> set_string!(buf, rect.x, rect.y, r.kind, tstyle(:text_dim))),
+    ("Activity", 8, (rect, buf, r, m) -> render(Sparkline(r.trend.rates; style = tstyle(:accent)), rect, buf)),
 )
 const MINNAME = 20 # width of the name column below which columns are dropped
 
 function render_table(m::Dashboard, area::Rect, buf)
-    k = 0
-    while k < length(COLUMNS) && area.width - 1 - sum(c -> c[2] + 1, COLUMNS[1:(k + 1)]) >= MINNAME
-        k += 1
-    end
-    columns = COLUMNS[1:k]
+    widths = cumsum([c[2] + 1 for c in COLUMNS])
+    k = count(<=(area.width - 1 - MINNAME), widths)
     # as wide as the longest label (over all lines, so that scrolling keeps the layout), and
     # any spare width is left at the right
     longest = maximum(r -> textwidth(r.label), m.lines; init = 0)
-    namewidth = clamp(longest, MINNAME, area.width - 1 - sum(c -> c[2] + 1, columns; init = 0))
+    namewidth = clamp(longest, MINNAME, area.width - 1 - (k == 0 ? 0 : widths[k]))
+    cells = (("Name", namewidth, nothing), COLUMNS[1:k]...)
+    xs = [area.x + 1; [area.x + namewidth + 2 + (j == 1 ? 0 : widths[j - 1]) for j in 1:k]]
 
     sorted, arrow = first(SORTS[m.sortcol]), m.reverse ? " ▼" : " ▲"
-    x = area.x + 1
-    for (name, w, _) in (("Name", namewidth, nothing), columns...)
+    for ((name, w, _), x) in zip(cells, xs)
         set_string!(buf, x, area.y, name == sorted ? name * arrow : name, tstyle(:title, bold = true); max_x = x + w - 1)
-        x += w + 1
     end
 
     height = area.height - 1
@@ -264,43 +262,28 @@ function render_table(m::Dashboard, area::Rect, buf)
         style = issel ? tstyle(:accent, bold = true) : tstyle(:text)
         issel && set_char!(buf, area.x, y, '▌', style)
         set_string!(buf, area.x + 1, y, _truncate(r.label, namewidth), style)
-        x = area.x + namewidth + 2
-        for (_, w, draw) in columns
-            draw(buf, x, y, r, m)
-            x += w + 1
+        for ((_, w, draw), x) in zip(cells[2:end], xs[2:end])
+            draw(Rect(x, y, w, 1), buf, r, m)
         end
     end
     return
 end
 
-function bar!(buf, x, y, w, frac, style)
-    n = clamp(frac, 0.0, 1.0) * w
-    full, part = floor(Int, n), round(Int, (n - floor(n)) * 8)
-    for i in 0:(w - 1)
-        filled = i < full || (i == full && part > 0)
-        set_char!(buf, x + i, y, i < full ? '█' : filled ? BARS_H[part] : '·', filled ? style : tstyle(:text_dim))
-    end
-    return
-end
-
-function draw_hitrate(buf, x, y, r::Row)
+# The recent hit rate, coloured by health; empty with `-` without lookups.
+function hitrate_gauge(r::Row)
     h = recent(r.trend)
-    style = isnan(h) ? tstyle(:text_dim) : tstyle(h < 0.5 ? :error : h < 0.8 ? :warning : :success)
-    bar!(buf, x, y, 8, isnan(h) ? 0.0 : h, style)
-    set_string!(buf, x + 9, y, isnan(h) ? "   -" : lpad("$(round(Int, 100h))%", 4), style)
-    return
+    isnan(h) && return Gauge(0.0; label = "-")
+    return Gauge(h; label = "$(round(Int, 100h))%", filled_style = tstyle(h < 0.5 ? :error : h < 0.8 ? :warning : :success))
 end
 
 # The fill against the limit, or against the pending limit while resizing this row.
-function draw_size(buf, x, y, r::Row, m::Dashboard)
+function size_gauge(r::Row, m::Dashboard)
     resizing = m.pending !== nothing && selected(m) === r
     maxsize = resizing ? m.pending : r.stats.maxsize
     frac = fill_fraction(r.stats, maxsize)
     style = resizing ? tstyle(:accent, bold = true) : tstyle(frac >= 0.9 ? :warning : :primary)
-    bar!(buf, x, y, 8, frac, style)
     label = "$(_short(r.stats.currentsize, r.bytes))/$(_short(maxsize, r.bytes))"
-    set_string!(buf, x + 9, y, label, style; max_x = x + 21)
-    return
+    return Gauge(frac; label, filled_style = style)
 end
 
 function render_detail(r::Row, area::Rect, buf)
@@ -312,14 +295,12 @@ function render_detail(r::Row, area::Rect, buf)
         "$(r.kind) · $size · $(s.hits) hits · $(s.misses) misses",
         "hit rate: recent $(_percent(recent(t))) · lifetime $(_percent(hitrate(s))) · $(round(activity(r); digits = 1)) hits/s",
     )
-    for (i, line) in enumerate(lines)
-        set_string!(buf, inner.x, inner.y + i - 1, line, tstyle(:text); max_x = right(inner))
-    end
+    render(Paragraph(join(lines, "\n"); style = tstyle(:text)), Rect(inner.x, inner.y, inner.width, 2), buf)
     render(Sparkline(t.rates; style = tstyle(:accent)), Rect(inner.x, inner.y + 2, inner.width, 1), buf)
     return
 end
 
-const KEYS = "↑↓ select  ⏎ resize  e empty  s sort  r reverse  / filter  q quit"
+const KEYS = "↑↓ select  ⏎ resize  e empty  s sort  r reverse  / filter  g refresh  q quit"
 const RESIZEKEYS = "←→ ½ ×2  [ ] ±10%  ⏎ apply  Esc cancel"
 
 function render_status(m::Dashboard, area::Rect, buf)
@@ -343,12 +324,22 @@ end
 
 _percent(x) = isnan(x) ? "-" : string(round(100x; digits = 1), "%")
 
-# At most `w` characters, cutting the middle so that both ends of a name stay visible.
+# At most `w` columns wide, cutting the middle so that both ends of a name stay visible.
 function _truncate(s::AbstractString, w::Integer)
-    length(s) <= w && return s
-    w <= 1 && return first(s, max(w, 0))
+    textwidth(s) <= w && return s
+    w <= 0 && return ""
     tail = (w - 1) ÷ 3
-    return first(s, w - 1 - tail) * "…" * last(s, tail)
+    return _fit(s, w - 1 - tail) * "…" * reverse(_fit(reverse(s), tail))
+end
+
+# The longest prefix of `s` at most `w` columns wide.
+function _fit(s::AbstractString, w::Integer)
+    n = 0
+    for (i, c) in pairs(s)
+        n += textwidth(c)
+        n > w && return s[1:prevind(s, i)]
+    end
+    return s
 end
 
 # 216, 1.2k, 10k, 3.4M; or 512B, 1.5KiB, 976KiB, 64GiB
