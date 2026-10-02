@@ -1,9 +1,11 @@
 [deps]
 Cached = "1b238080-9255-4fe9-b224-89eb24efe93b"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+Tachikoma = "468859d6-42d8-48b7-8ad9-1d312e0e3b0a"
 
 [compat]
 Documenter = "1"
+Tachikoma = "2.7"
 
 [sources]
 Cached = {path = ".."}
