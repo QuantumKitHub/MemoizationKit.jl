@@ -59,8 +59,8 @@ end
     cache_dashboard(; interval = 1.0, filter = "")
 
 Open an interactive terminal dashboard of the global caches: one row per function, with
-live hit rates and sizes, from which caches can be emptied or resized. Functions with a disk
-cache in use (see the disk caching docs) are shown too, with their disk statistics. The
+live hit rates and sizes, from which caches can be emptied or resized. A second tab lists the
+disk caches in use (see the disk caching docs), with their entries, size and hit rate. The
 statistics are re-read every `interval` seconds, and only functions whose name contains
 `filter` are shown.
 

@@ -58,9 +58,10 @@ julia --project=/tmp/runic -e 'using Pkg; Pkg.add("Runic"); using Runic; Runic.m
   one SQLite database per node (WAL, `keyhash`+`key` → `value`), opened on first use; disk errors
   warn once and the call continues. Lookup order: RAM, artifact, node database, compute.
 - `ext/CachedTachikomaExt.jl`: the dashboard. It renders from a copy of the statistics, refreshed
-  every `interval`; tests render it headlessly with Tachikoma's `TestBackend`. Disk caches come
-  from `Cached.disk_cache_stats()` (in-memory counters of the SQLite extension); the selected
-  row's `disk_cache_info` (a `count(*)`) is read on a background task, at most every 10 s.
+  every `interval`; tests render it headlessly with Tachikoma's `TestBackend`. Two tabs (`Tab`
+  structs, Tachikoma's `TabBar`): RAM, and Disk, whose rows come from `Cached.disk_cache_stats()`
+  (in-memory counters of the SQLite extension) and whose entries and sizes (`disk_cache_info`,
+  a `count(*)`) are read for all rows on a background task while it is shown, at most every 10 s.
 - `ext/CachedTimerOutputsExt.jl`: `enable_cache_timers!(M)` evals a method of `instrument` for
   the owner of `M` into the extension, `disable_cache_timers!(M)` deletes it (deleting an
   overwritten method would revive the old one, so enabling deletes before defining).

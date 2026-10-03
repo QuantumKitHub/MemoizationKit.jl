@@ -157,8 +157,8 @@ node. Files of older versions, or of other nodes, are left alone; delete them by
 process uses them. [`Cached.disk_cache_stats`](@ref) counts the lookups on disk of this
 process, without reading any file.
 
-The [dashboard](dashboard.md) shows the functions with a disk cache, including those without a
-cache in RAM, with these numbers; it does not empty disk caches.
+The Disk tab of the [dashboard](dashboard.md) lists the open disk caches with these numbers;
+it does not empty them.
 
 ## Precomputed results as an artifact
 

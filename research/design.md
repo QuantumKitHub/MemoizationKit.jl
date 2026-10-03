@@ -71,8 +71,9 @@ compile-time. See `docs/src/configuration.md`.
   overwriting method revives the old one. The owner is computed outside the closures:
   otherwise Julia 1.10 boxes them.
 - **Dashboard** (`CachedTachikomaExt`, `docs/src/dashboard.md`). Renders from copied statistics,
-  never holding a cache lock across frames. Disk rows use in-memory counters; the selected row's
-  disk entries are read in a background task. Emptying and resizing act on RAM only.
+  never holding a cache lock across frames. Tabs for RAM and disk; the Disk tab uses in-memory
+  counters, and reads entries and sizes (`disk_cache_info`) in a background task, never on a
+  frame. Emptying and resizing act on RAM only.
 - **Disk** (`CachedSQLiteExt`, `docs/src/disk.md`). Below RAM: RAM, then artifact, then the
   node's SQLite database, then compute. One WAL-mode database per function, version and host,
   shared by the node's processes. `diskversion(f)` is the only version: keeping stored results

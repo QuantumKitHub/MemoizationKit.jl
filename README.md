@@ -45,15 +45,15 @@ See the [disk caching docs](https://lkdvos.github.io/Cached.jl/dev/disk/).
 
 With [TimerOutputs.jl](https://github.com/KristofferC/TimerOutputs.jl) loaded, `enable_cache_timers!(MyPackage, to)` times the lookups and computations of the cached functions owned by `MyPackage` and its submodules, and `disable_cache_timers!(MyPackage)` brings back the zero-cost default. See the [timing docs](https://lkdvos.github.io/Cached.jl/dev/timing/).
 
-With [Tachikoma.jl](https://github.com/kahliburke/Tachikoma.jl) loaded, `cache_dashboard()` opens a live terminal dashboard to browse, empty and resize the caches, which also shows the disk caches; see the [dashboard docs](https://lkdvos.github.io/Cached.jl/dev/dashboard/).
+With [Tachikoma.jl](https://github.com/kahliburke/Tachikoma.jl) loaded, `cache_dashboard()` opens a live terminal dashboard to browse, empty and resize the caches, with a second tab for the disk caches; see the [dashboard docs](https://lkdvos.github.io/Cached.jl/dev/dashboard/).
 
 ```text
- 5 caches, 325 entries in RAM
+[RAM] │  Disk
+ 4 caches · 325 entries · 175KiB in byte-measured caches · recent hit rate 70.3%
  Name ▲               Hit rate      Size                   Kind       Activity
- Main.fib             █████60%░░░░░ ▏░░░░░░░3/10k░░░░░░░░░ LRU+disk   ███████
-▌Main.fsymbol         █████67%▊░░░░ ▋░░░░░░276/10k░░░░░░░░ Clock      ▄█▆▃▇▅▂▆
+▌Main.fib             █████60%░░░░░ ▏░░░░░░░3/10k░░░░░░░░░ LRU+disk   ███████
+ Main.fsymbol         █████67%▊░░░░ ▋░░░░░░276/10k░░░░░░░░ Clock      ▄█▆▃▇▅▂▆
  Main.label           ████100%█████ ▏░░░░░░░6/10k░░░░░░░░░ Clock      ▇█ ▁▃▄▅▇
  Main.matrix          ████100%█████ ███▊175KiB/1.0MiB░░░░░ Clock      ▆▇█▁▂▃▄▄
- Main.wigner          ████100%█████ no limit (disk)        Disk       ▇█▃▄▅▇█▃
- ↑↓ select  ⏎ resize  e empty  s sort  r reverse  / filter  g refresh  q quit
+ ⇥ tab  ↑↓ select  ⏎ resize  e empty  s sort  r reverse  / filter  g refresh  q quit
 ```
