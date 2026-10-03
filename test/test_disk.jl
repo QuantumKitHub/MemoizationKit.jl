@@ -37,6 +37,7 @@ plainsquare(x) = square(x)
     @test allocs(plainsquare, 3) == 0 # the RAM hit path is unchanged
     info = only(disk_cache_info(square))
     @test info.first === square && info.second.entries == 1 && info.second.bytes > 0
+    @test Dict(Cached.disk_cache_stats())[square] == (; hits = 1, misses = 1) # lookups on disk
     @test endswith(EXT.storename(square), ".square-v1") # `<Module>.square-v1`
     @test path(square) == joinpath(DIR, EXT.storename(square) * "-$(EXT._sanitize(gethostname())).sqlite")
 end

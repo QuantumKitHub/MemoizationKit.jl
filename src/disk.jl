@@ -83,6 +83,16 @@ that have been used in this process, as `f => (; path, entries, bytes)` pairs.
 function disk_cache_info end
 
 """
+    Cached.disk_cache_stats() -> Vector{Pair{Any, NamedTuple}}
+
+The disk lookups in this process of each function whose disk cache is open, as
+`f => (; hits, misses)` pairs, where a hit is a result read from disk (from the artifact or
+the database of the node) and a miss a result computed and written. Unlike
+[`disk_cache_info`](@ref), it reads no files.
+"""
+function disk_cache_stats end
+
+"""
     empty_disk_caches!(f)
     empty_disk_caches!(m::Module)
 

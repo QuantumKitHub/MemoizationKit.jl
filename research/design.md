@@ -138,7 +138,7 @@ Decided on 2026-10-01: per package **and** per function, through Preferences.jl.
   - `f::F` static parameters in `call.jl` keep Julia specializing on `f`, otherwise the closures box it. The owner is computed in `_call`, outside the closures: computing it inside made Julia 1.10, and only 1.10, box the closure and key (32 B per hit) in the first caller compiled that inlines the hit.
   - World age: the new method is seen from the next top-level statement on, or through `invokelatest`.
   - Without TimerOutputs, calling either function gives a `MethodError` with an error hint, like `cache_dashboard`.
-- **`CachedTachikomaExt`**: a TUI for browsing caches, watching hit rates live, resizing, and emptying. Implemented as `cache_dashboard()`; the user-facing description is `docs/src/dashboard.md`.
+- **`CachedTachikomaExt`**: a TUI for browsing caches, watching hit rates live, resizing, and emptying. Implemented as `cache_dashboard()`; the user-facing description is `docs/src/dashboard.md`. Functions with a disk cache are listed through `Cached.disk_cache_stats()` (kind `+disk`, or a `Disk` row without a RAM cache); the entries on disk of the selected row are read in the background. Emptying and resizing act on RAM only.
   - One row per cache, with Tachikoma `Gauge`s for the recent hit rate (last 10 refreshes) and the size against the limit, the container kind, and an activity sparkline.
   - Resizing calls `set_cache_size!` with the function's current measure.
   - It renders from a copy of the statistics, so it never holds a cache's lock across frames.

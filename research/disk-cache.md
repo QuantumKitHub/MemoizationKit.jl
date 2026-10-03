@@ -77,6 +77,35 @@ concurrency between processes, and fear of corrupt files. The user-facing descri
   listing of every file of a function (other versions too) with stale-file deletion, and the Julia
   version in the file name.
 
+## Dashboard (2026-10-03)
+
+- **Counters.** Each store counts its lookups in this process, `hits` (read from the artifact or
+  the node database) and `misses` (computed and written), in two `Threads.Atomic{Int}`, on the
+  disk path only (RAM hits are untouched: 35 ns, 0 allocations). `Cached.disk_cache_stats()`
+  (public, not exported, like `cache_stats`) lists `f => (; hits, misses)` for every open store,
+  without I/O. `disk_cache_info` is unchanged.
+- **Rows.** A function's RAM rows get `+disk` in the Kind column (5 → 10 columns wide, so Kind
+  appears from 69 columns instead of 65, Activity from 78); a function with a disk cache and no
+  registered RAM cache (`NoCache` in RAM, or task-local) gets a row of kind `Disk`, whose hit rate
+  and sparkline are those of the disk and whose size cell reads `no limit (disk)`. Functions
+  appear once their store is open (first call), as with RAM caches.
+- **Detail.** One more line: disk hits, misses, lifetime disk hit rate, entries, bytes, path.
+  `count(*)` measured on a 10^6-entry, 221 MiB database: 11 ms warm (local disk or GPFS), 1.8 ms
+  at 10^5; cold over a network file system it reads the whole index, and `disk_cache_info` takes
+  the store's lock, which a writer can hold for up to the 60 s busy timeout. So the entries are
+  read for the selected row only, on a `Threads.@spawn` task collected by the next frame, at most
+  every 10 s (or on `g`); `…` shows meanwhile. With one thread the task still shares the UI's
+  thread while it runs.
+- **Actions.** `e` empties RAM only; Enter resizes RAM only (the status bar says `(RAM)`); on a
+  `Disk` row both just print a message pointing to `empty_disk_caches!`. The disk cannot be
+  emptied from the dashboard at all: it is persistent, shared with the other processes of the node,
+  expensive to refill, and one REPL call away; a confirmation dialog would be more code for a rare,
+  destructive action.
+- **Robustness.** Without SQLite (`applicable(Cached.disk_cache_stats)` is false) there are no
+  disk rows. With `disable_disk_caches!()` the counters stop, the header says `disk caches off`
+  and the disk line `disk (off)`. A function with `disk = false`, or whose files all failed to
+  open, has no open store and is not listed as on disk; one with only an artifact shows `? entries`.
+
 ## Serializer types: how practical
 
 Workable. A custom serializer is a `mutable struct S{I<:IO} <: AbstractSerializer` with fields

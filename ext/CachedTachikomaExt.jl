@@ -5,6 +5,10 @@ module CachedTachikomaExt
 # The model keeps its own copy of the statistics, re-read from `cache_info` and `cache_stats`
 # every `interval` seconds; rendering only reads that copy, so a frame never touches a cache.
 # Actions (empty, resize) call the locked public API and refresh immediately.
+#
+# Functions with a disk cache (SQLite extension) are listed from `disk_cache_stats`, which
+# reads no files; the entries and size on disk are read for the selected row only, by
+# `disk_cache_info` on a background task. The disk is never emptied or resized from here.
 
 using Cached: Cached, AbstractCache, cache_info, cache_stats, set_cache_size!
 using Tachikoma: Tachikoma, Model, Frame, KeyEvent, Rect, Layout, Vertical, Fixed, Fill,
@@ -15,6 +19,7 @@ const STATS = @NamedTuple{hits::Int, misses::Int, length::Int, currentsize::Int,
 const HISTORY = 120 # refreshes kept for the sparklines
 const WINDOW = 10 # refreshes over which the recent hit rate is computed
 const MINSIZE = (40, 8) # columns and rows below which only a message is shown
+const DISKINTERVAL = 10.0 # seconds between reads of the entries and size on disk
 
 # Hits and misses between successive refreshes, and hits per second.
 mutable struct Trend
@@ -32,15 +37,19 @@ function recent(t::Trend)
     return h + m == 0 ? NaN : h / (h + m)
 end
 
-# One global cache, as seen at the last refresh.
+const DISKSTATS = @NamedTuple{hits::Int, misses::Int}
+
+# One global cache, or a disk cache without one, as seen at the last refresh. A row without
+# `cache` has the statistics of its disk in `stats`.
 struct Row
     f::Any
-    cache::AbstractCache
+    cache::Union{Nothing, AbstractCache}
     label::String # the function, as printed
     kind::String
     bytes::Bool
     stats::STATS
     trend::Trend
+    disk::Union{Nothing, DISKSTATS}
 end
 
 hitrate(s) = (n = s.hits + s.misses; n == 0 ? NaN : s.hits / n)
@@ -51,7 +60,7 @@ fill_fraction(s, maxsize = s.maxsize) = maxsize == 0 ? 1.0 : s.currentsize / max
 const SORTS = (
     "Name" => r -> r.label,
     "Hit rate" => r -> (h = recent(r.trend); isnan(h) ? -1.0 : h),
-    "Size" => r -> fill_fraction(r.stats),
+    "Size" => r -> r.cache === nothing ? -1.0 : fill_fraction(r.stats),
     "Activity" => activity,
 )
 
@@ -60,7 +69,7 @@ const SORTS = (
     filter::String = ""
     rows::Vector{Row} = Row[]                     # every global cache, as read at the last refresh
     lines::Vector{Row} = Row[]                    # filtered and sorted, as shown
-    trends::IdDict{AbstractCache, Trend} = IdDict{AbstractCache, Trend}()
+    trends::IdDict{Any, Trend} = IdDict{Any, Trend}() # by cache, or function for disk-only rows
     selected::Int = 0
     offset::Int = 0
     sortcol::Int = 1
@@ -69,6 +78,8 @@ const SORTS = (
     pending::Union{Nothing, Int} = nothing        # new maxsize while resizing
     input::Union{Nothing, TextInput} = nothing    # filter input
     message::String = ""
+    diskinfo::Any = nothing                       # (; f, at, info) from the last `disk_cache_info`
+    disktask::Union{Nothing, Task} = nothing      # reading the next one
     quit::Bool = false
 end
 
@@ -82,22 +93,33 @@ function Cached.cache_dashboard(; interval::Real = 1.0, filter::AbstractString =
 end
 
 selected(m::Dashboard) = get(m.lines, m.selected, nothing)
+id(r::Row) = r.cache === nothing ? r.f : r.cache
 
 # --- refresh ---
 
 function refresh!(m::Dashboard, now = time())
     elapsed = now - m.lastrefresh
     m.lastrefresh = now
-    trends = IdDict{AbstractCache, Trend}()
+    trends = IdDict{Any, Trend}()
+    disk = IdDict{Any, DISKSTATS}(disk_stats())
     m.rows = map(cache_info()) do (f, c)
         st = cache_stats(c)
         s = STATS(st[fieldnames(STATS)])
-        kind = c isa Cached.ClockCache ? "Clock" : string(nameof(typeof(c)))
-        Row(f, c, repr(f), kind, st.by !== nothing, s, trend!(trends, m.trends, c, s, elapsed))
+        d = get(disk, f, nothing)
+        kind = (c isa Cached.ClockCache ? "Clock" : string(nameof(typeof(c)))) * (d === nothing ? "" : "+disk")
+        Row(f, c, repr(f), kind, st.by !== nothing, s, trend!(trends, m.trends, c, s, elapsed), d)
+    end
+    for (f, d) in disk # functions cached on disk only
+        any(r -> r.f === f, m.rows) && continue
+        s = STATS((d.hits, d.misses, 0, 0, 0))
+        push!(m.rows, Row(f, nothing, repr(f), "Disk", false, s, trend!(trends, m.trends, f, s, elapsed), d))
     end
     m.trends = trends # drops the trends of caches that are gone
     return rebuild!(m)
 end
+
+# Without the SQLite extension there are no disk caches.
+disk_stats() = applicable(Cached.disk_cache_stats) ? Cached.disk_cache_stats() : Pair{Any, DISKSTATS}[]
 
 function trend!(trends, old, c, s, elapsed)
     t = get(old, c, nothing)
@@ -117,7 +139,7 @@ end
 function rebuild!(m::Dashboard)
     current = selected(m)
     m.lines = sort!(filter(r -> occursin(m.filter, r.label), m.rows); by = last(SORTS[m.sortcol]), rev = m.reverse)
-    i = current === nothing ? nothing : findfirst(r -> r.cache === current.cache, m.lines)
+    i = current === nothing ? nothing : findfirst(r -> id(r) === id(current), m.lines)
     m.selected = clamp(something(i, m.selected), min(1, length(m.lines)), length(m.lines))
     return m
 end
@@ -145,14 +167,17 @@ function Tachikoma.update!(m::Dashboard, evt::KeyEvent)
     elseif key == :char && c == '/'
         m.input = TextInput(; text = m.filter, label = "Filter: ", focused = true)
     elseif key == :char && c == 'g'
+        m.diskinfo = nothing
         refresh!(m)
     elseif r === nothing
         nothing
+    elseif r.cache === nothing && (key == :enter || (key == :char && c == 'e'))
+        m.message = "$(r.label) is cached on disk only, without a size limit; see empty_disk_caches!"
     elseif key == :enter
         m.pending = r.stats.maxsize
     elseif key == :char && c == 'e'
         empty!(r.cache)
-        m.message = "emptied $(r.label)"
+        m.message = "emptied $(r.label)" * (r.disk === nothing ? "" : " in RAM; its disk cache is kept")
         refresh!(m)
     end
     return nothing
@@ -209,12 +234,14 @@ function Tachikoma.view(m::Dashboard, f::Frame)
         set_string!(buf, r.x, r.y, msg, tstyle(:warning, bold = true); max_x = right(r))
         return
     end
-    detail = area.height >= 16 ? 5 : 0
+    r = selected(m)
+    detail = area.height < 16 ? 0 : r !== nothing && r.disk !== nothing ? 6 : 5
     header, body, info, status = split_layout(Layout(Vertical, [Fixed(1), Fill(), Fixed(detail), Fixed(1)]), area)
 
     entries = sum(r -> r.stats.length, m.rows; init = 0)
     filt = isempty(m.filter) ? "" : " · filter \"$(m.filter)\""
-    title = " $(length(m.rows)) caches, $entries entries$filt"
+    off = Cached.DISK_ENABLED[] || all(r -> r.disk === nothing, m.rows) ? "" : " · disk caches off"
+    title = " $(length(m.rows)) caches, $entries entries in RAM$off$filt"
     set_string!(buf, header.x, header.y, title, tstyle(:title, bold = true); max_x = right(header))
 
     if isempty(m.lines)
@@ -223,8 +250,7 @@ function Tachikoma.view(m::Dashboard, f::Frame)
     else
         render_table(m, body, buf)
     end
-    r = selected(m)
-    detail > 0 && r !== nothing && render_detail(r, info, buf)
+    detail > 0 && r !== nothing && render_detail(m, r, info, buf)
     render_status(m, status, buf)
     return nothing
 end
@@ -233,8 +259,8 @@ end
 # function drawing the cell into a rect.
 const COLUMNS = (
     ("Hit rate", 13, (rect, buf, r, m) -> render(hitrate_gauge(r), rect, buf)),
-    ("Size", 22, (rect, buf, r, m) -> render(size_gauge(r, m), rect, buf)),
-    ("Kind", 5, (rect, buf, r, m) -> set_string!(buf, rect.x, rect.y, r.kind, tstyle(:text_dim))),
+    ("Size", 22, (rect, buf, r, m) -> render_size(r, m, rect, buf)),
+    ("Kind", 10, (rect, buf, r, m) -> set_string!(buf, rect.x, rect.y, r.kind, tstyle(:text_dim))),
     ("Activity", 8, (rect, buf, r, m) -> render(Sparkline(r.trend.rates; style = tstyle(:accent)), rect, buf)),
 )
 const MINNAME = 20 # width of the name column below which columns are dropped
@@ -277,6 +303,12 @@ function hitrate_gauge(r::Row)
     return Gauge(h; label = "$(round(Int, 100h))%", filled_style = tstyle(h < 0.5 ? :error : h < 0.8 ? :warning : :success))
 end
 
+# A gauge, except for disk-only rows, which have no limit.
+function render_size(r::Row, m::Dashboard, rect::Rect, buf)
+    r.cache === nothing && return set_string!(buf, rect.x, rect.y, "no limit (disk)", tstyle(:text_dim); max_x = right(rect))
+    return render(size_gauge(r, m), rect, buf)
+end
+
 # The fill against the limit, or against the pending limit while resizing this row.
 function size_gauge(r::Row, m::Dashboard)
     resizing = m.pending !== nothing && selected(m) === r
@@ -287,18 +319,51 @@ function size_gauge(r::Row, m::Dashboard)
     return Gauge(frac; label, filled_style = style)
 end
 
-function render_detail(r::Row, area::Rect, buf)
+function render_detail(m::Dashboard, r::Row, area::Rect, buf)
     inner = render(Block(; title = " $(_truncate(r.label, area.width - 6)) ", border_style = tstyle(:border)), area, buf)
     s, t = r.stats, r.trend
     size = r.bytes ? "$(s.length) entries, $(_short(s.currentsize, true)) of $(_short(s.maxsize, true))" :
         "$(s.length) of $(s.maxsize) entries"
-    lines = (
-        "$(r.kind) · $size · $(s.hits) hits · $(s.misses) misses",
+    lines = [
+        r.cache === nothing ? "Disk only, no RAM cache · no size limit" : "$(r.kind) · $size · $(s.hits) hits · $(s.misses) misses",
         "hit rate: recent $(_percent(recent(t))) · lifetime $(_percent(hitrate(s))) · $(round(activity(r); digits = 1)) hits/s",
-    )
-    render(Paragraph(join(lines, "\n"); style = tstyle(:text)), Rect(inner.x, inner.y, inner.width, 2), buf)
-    render(Sparkline(t.rates; style = tstyle(:accent)), Rect(inner.x, inner.y + 2, inner.width, 1), buf)
+    ]
+    r.disk === nothing || push!(lines, disk_line(r.disk, diskinfo!(m, r.f)))
+    n = length(lines) # cut in the middle rather than wrapped, which keeps the end of the path
+    render(Paragraph(join(_truncate.(lines, inner.width), "\n"); style = tstyle(:text)), Rect(inner.x, inner.y, inner.width, n), buf)
+    render(Sparkline(t.rates; style = tstyle(:accent)), Rect(inner.x, inner.y + n, inner.width, 1), buf)
     return
+end
+
+# `info` is `missing` while it is read, and `nothing` if it could not be.
+function disk_line(d::DISKSTATS, info)
+    off = Cached.DISK_ENABLED[] ? "" : " (off)"
+    lookups = "$(d.hits) hits · $(d.misses) misses ($(_percent(hitrate(d))))"
+    stored = info === missing ? "… entries" : info === nothing ? "? entries" :
+        "$(info.entries) entries · $(_short(info.bytes, true)) · $(info.path)"
+    return "disk$off: $lookups · $stored"
+end
+
+# The `disk_cache_info` of the selected function `f`, read on a task (counting the entries of a
+# large database can take a while) at most every `DISKINTERVAL` seconds.
+function diskinfo!(m::Dashboard, f)
+    task = m.disktask
+    task !== nothing && istaskdone(task) && ((m.diskinfo, m.disktask) = (fetch(task), nothing))
+    d = m.diskinfo
+    current = d !== nothing && d.f === f
+    if m.disktask === nothing && !(current && time() - d.at < DISKINTERVAL)
+        m.disktask = Threads.@spawn (; f, at = time(), info = read_diskinfo(f))
+    end
+    return current ? d.info : missing
+end
+
+function read_diskinfo(f)
+    return try
+        info = Cached.disk_cache_info(f)
+        isempty(info) ? nothing : last(first(info))
+    catch
+        nothing
+    end
 end
 
 const KEYS = "↑↓ select  ⏎ resize  e empty  s sort  r reverse  / filter  g refresh  q quit"
@@ -310,7 +375,7 @@ function render_status(m::Dashboard, area::Rect, buf)
         render(m.input, area, buf)
     elseif m.pending !== nothing && r !== nothing
         change = " $(_short(r.stats.maxsize, r.bytes)) → $(_short(m.pending, r.bytes)) "
-        what = " $(r.label) "
+        what = " $(r.label)$(r.disk === nothing ? "" : " (RAM)") "
         left = [Span(change, tstyle(:accent, bold = true)), Span(what, tstyle(:text)), Span(" $RESIZEKEYS", tstyle(:text_dim))]
         render(StatusBar(; left), area, buf)
     else

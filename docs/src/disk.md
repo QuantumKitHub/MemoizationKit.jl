@@ -149,11 +149,16 @@ caches are never used during precompilation.
 disk_cache_info(CGC)                 # [CGC => (; path, entries, bytes)]
 disk_cache_info(SUNRepresentations)  # ... of its functions used in this process
 empty_disk_caches!(CGC)              # remove the entries
+Cached.disk_cache_stats()            # [CGC => (; hits, misses), ...] in this process
 ```
 
 [`disk_cache_info`](@ref) and [`empty_disk_caches!`](@ref) act on the current database of this
 node. Files of older versions, or of other nodes, are left alone; delete them by hand when no
-process uses them.
+process uses them. [`Cached.disk_cache_stats`](@ref) counts the lookups on disk of this
+process, without reading any file.
+
+The [dashboard](dashboard.md) shows the functions with a disk cache, including those without a
+cache in RAM, with these numbers; it does not empty disk caches.
 
 ## Precomputed results as an artifact
 

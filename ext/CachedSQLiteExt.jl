@@ -77,7 +77,10 @@ struct Stores
     f::Any
     artifact::Union{Nothing, Store}
     node::Union{Nothing, Store}
+    hits::Threads.Atomic{Int} # lookups in this process, for `disk_cache_stats`
+    misses::Threads.Atomic{Int}
 end
+Stores(f, artifact, node) = Stores(f, artifact, node, Threads.Atomic{Int}(0), Threads.Atomic{Int}(0))
 
 const STORES = IdDict{Any, Stores}() # typeof(f) => its stores
 const LOCK = ReentrantLock()
@@ -144,7 +147,7 @@ end
 function lookup(f::F, s::Stores, ::Type{S}, ::Type{V}, key, args, kw, o) where {F, S, V}
     # callable objects with fields share the store of their type, so they are part of the key
     kb = attempt(() -> tobytes(S, Base.issingletontype(F) ? key : (f, key)), "serialize a key of `$(_fname(f))`")
-    kb === nothing && return _compute(f, o, args, kw)
+    kb === nothing && (Threads.atomic_add!(s.misses, 1); return _compute(f, o, args, kw))
     h = sha256(kb)
     for store in (s.artifact, s.node)
         store === nothing && continue
@@ -152,8 +155,9 @@ function lookup(f::F, s::Stores, ::Type{S}, ::Type{V}, key, args, kw, o) where {
         bytes === nothing && continue
         # an entry that cannot be read, or of another type, is a miss and is overwritten
         v = attempt(() -> Some(deserialize(S(IOBuffer(bytes)))), nothing)
-        v !== nothing && something(v) isa V && return something(v)::V
+        v !== nothing && something(v) isa V && (Threads.atomic_add!(s.hits, 1); return something(v)::V)
     end
+    Threads.atomic_add!(s.misses, 1)
     v = _compute(f, o, args, kw)
     node = s.node
     node === nothing || attempt("write `$(_fname(f))` to the disk cache at $(node.db.file)") do
@@ -176,6 +180,10 @@ function Cached.disk_cache_info(x)
         s.f => (; path, entries, bytes = filesize(path) + filesize(path * "-wal"))
     end
 end
+
+Cached.disk_cache_stats() = Pair{Any, @NamedTuple{hits::Int, misses::Int}}[
+    s.f => (; hits = s.hits[], misses = s.misses[]) for s in @lock(LOCK, collect(values(STORES))) if s.artifact !== nothing || s.node !== nothing
+]
 
 Cached.empty_disk_caches!(x) = foreach(s -> @lock(s.node.lock, SQLite.execute(s.node.db, "DELETE FROM entries")), selected(x))
 

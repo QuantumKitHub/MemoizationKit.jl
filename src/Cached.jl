@@ -10,7 +10,7 @@ export disable_disk_caches!, enable_disk_caches!
 
 # documented API that is used qualified, e.g. by overloading `Cached.cachesize`
 @static if VERSION >= v"1.11.0-DEV.469"
-    eval(Meta.parse("public AbstractCache, cache_stats, cachesize, implementation, instrument_label, diskversion, disk_artifact"))
+    eval(Meta.parse("public AbstractCache, cache_stats, disk_cache_stats, cachesize, implementation, instrument_label, diskversion, disk_artifact"))
 end
 
 using Base: @lock

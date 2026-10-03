@@ -151,9 +151,9 @@ end
     @test find_text(tb, "Size") === nothing
     @test find_text(draw(m; width = 60, height = 15), "Size") !== nothing
     @test find_text(draw(m; width = 60, height = 15), "Kind") === nothing
-    @test find_text(draw(m; width = 65, height = 15), "Kind") !== nothing
-    @test find_text(draw(m; width = 65, height = 15), "Activity") === nothing
-    @test find_text(draw(m; width = 80, height = 15), "Activity") !== nothing
+    @test find_text(draw(m; width = 69, height = 15), "Kind") !== nothing
+    @test find_text(draw(m; width = 69, height = 15), "Activity") === nothing
+    @test find_text(draw(m; width = 78, height = 15), "Activity") !== nothing
     @test find_text(draw(m; width = 80, height = 15), "hits/s") === nothing
     @test find_text(draw(m; width = 80, height = 16), "hits/s") !== nothing
 end
@@ -282,3 +282,117 @@ end
         @test textwidth(row[1:(findfirst('░', row) - 1)]) + 1 == column(tb, "Hit rate") == namewidth + 3
     end
 end
+
+@testset "without SQLite" begin
+    # a fresh process with this environment, which has SQLite without loading it
+    code = """
+    using Cached, Tachikoma
+    const Ext = Base.get_extension(Cached, :CachedTachikomaExt)
+    @cached nosql(x) = x
+    nosql(1)
+    m = Ext.Dashboard(; interval = Inf, filter = "nosql")
+    Ext.refresh!(m)
+    tb = Tachikoma.TestBackend(100, 20)
+    Tachikoma.view(m, Tachikoma.Frame(tb.buf, Tachikoma.Rect(1, 1, 100, 20), Tachikoma.GraphicsRegion[], Tachikoma.PixelSnapshot[]))
+    print(Base.get_extension(Cached, :CachedSQLiteExt) === nothing, " ", length(m.lines), " ")
+    print(Tachikoma.find_text(tb, "Clock") !== nothing, " ", Tachikoma.find_text(tb, "disk") === nothing)
+    """
+    cmd = `$(Base.julia_cmd()) --startup-file=no -t1 --heap-size-hint=1G --project=$(Base.active_project()) -e $code`
+    @test read(addenv(cmd, "JULIA_PKG_OFFLINE" => "true"), String) == "true 1 true true"
+end
+
+using SQLite: SQLite
+include(joinpath(pkgdir(Cached), "benchmark", "disk_stress.jl")) # `use_disk_path`
+const DISK_ENV = use_disk_path(mktempdir())
+
+@cached dash_disk(x::Int) = x + 1
+Cached.DiskCacheStyle(::typeof(dash_disk), ::Int) = DiskCache()
+@cached dash_diskonly(x::Int)::Int = 2x
+Cached.CacheStyle(::typeof(dash_diskonly), ::Int) = NoCache()
+Cached.DiskCacheStyle(::typeof(dash_diskonly), ::Int) = DiskCache()
+@cached dash_disknotyet(x::Int) = x # its store is opened on the first call
+Cached.DiskCacheStyle(::typeof(dash_disknotyet), ::Int) = DiskCache()
+
+# Draw until the entries on disk of the selected row are read.
+function settle!(m)
+    tb = draw(m)
+    while m.disktask !== nothing
+        wait(m.disktask)
+        tb = draw(m)
+    end
+    return tb
+end
+
+@testset "disk caches" begin
+    dash_disk(1), dash_disk(2)
+    empty_caches!(dash_disk)
+    dash_disk(1) # two misses on disk, then a hit
+    foreach(dash_diskonly, (1, 1, 1, 2))
+    stats = Dict(Cached.disk_cache_stats())
+    @test stats[dash_disk] == (; hits = 1, misses = 2) && stats[dash_diskonly] == (; hits = 2, misses = 2)
+    @test !haskey(stats, dash_disknotyet)
+
+    m = dashboard("dash_disk")
+    @test length(m.lines) == 2 # not `dash_disknotyet`
+    ram = only(r for r in m.lines if r.f === dash_disk)
+    disk = only(r for r in m.lines if r.f === dash_diskonly)
+    @test ram.kind == "Clock+disk" && ram.disk == (; hits = 1, misses = 2) && ram.stats.length == 1
+    @test disk.cache === nothing && disk.kind == "Disk" && (disk.stats.hits, disk.stats.misses) == (2, 2)
+    tb = draw(m; width = 160)
+    @test occursin("Clock+disk", line(tb, repr(dash_disk)))
+    @test occursin(r"no limit \(disk\) +Disk", line(tb, repr(dash_diskonly)))
+    @test occursin(r"\d+ caches, \d+ entries in RAM · filter", row_text(tb, 1))
+
+    # the detail panel reads the entries on disk in the background
+    select!(m, dash_diskonly)
+    tb = draw(m)
+    @test find_text(tb, "Disk only, no RAM cache") !== nothing
+    @test occursin("disk: 2 hits · 2 misses (50.0%) · … entries", line(tb, "disk:"))
+    tb = settle!(m)
+    @test occursin(r"disk: 2 hits · 2 misses \(50.0%\) · 2 entries · \d+(\.\d)?KiB · /", line(tb, "disk:"))
+    draw(m)
+    @test m.disktask === nothing # read at most every DISKINTERVAL seconds
+    press(m, 'g')
+    draw(m)
+    @test m.disktask !== nothing
+    settle!(m)
+
+    # hit rate and activity of a disk-only row are those of the disk
+    foreach(dash_diskonly, (1, 2, 1, 3))
+    Ext.refresh!(m, m.lastrefresh + 1)
+    disk = only(r for r in m.lines if r.f === dash_diskonly)
+    @test Ext.recent(disk.trend) == 0.75 && disk.trend.rates[end] == 3.0
+
+    # the disk is neither emptied nor resized
+    select!(m, dash_diskonly)
+    press(m, 'e')
+    @test occursin(repr(dash_diskonly), line(draw(m), "is cached on disk only")) && only(disk_cache_info(dash_diskonly)).second.entries == 3
+    press(m, :enter)
+    @test m.pending === nothing
+    select!(m, dash_disk)
+    press(m, 'e')
+    @test isempty(only(cache_info(dash_disk)).second) && only(disk_cache_info(dash_disk)).second.entries == 2
+    @test occursin("its disk cache is kept", line(draw(m), "emptied"))
+    press(m, :enter)
+    @test occursin(repr(dash_disk) * " (RAM)", line(draw(m), "→"))
+    press(m, :escape)
+
+    disable_disk_caches!()
+    try
+        tb = draw(m)
+        @test find_text(tb, "disk caches off") !== nothing && occursin("disk (off): ", line(tb, "disk (off)"))
+    finally
+        enable_disk_caches!()
+    end
+
+    # the smallest terminal shows the rows, without the detail panel
+    tb = draw(m; width = 40, height = 8)
+    @test find_text(tb, "too small") === nothing && find_text(tb, "Hit rate") !== nothing
+    @test occursin("░", row_text(tb, 4)) && find_text(tb, "disk:") === nothing # both rows
+    # Kind fits from 69 columns on
+    @test find_text(draw(m; width = 68, height = 15), "Kind") === nothing
+    @test find_text(draw(m; width = 69, height = 15), "Clock+disk") !== nothing
+end
+
+Base.get_extension(Cached, :CachedSQLiteExt).close_all()
+filter!(!=(DISK_ENV), LOAD_PATH)
