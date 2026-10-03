@@ -16,6 +16,7 @@ using ExprTools: ExprTools
 using Preferences: @load_preference, load_preference, has_preference, set_preferences!, delete_preferences!
 
 include("containers/interface.jl")
+include("containers/slots.jl")
 include("containers/lru.jl")
 include("containers/clock.jl")
 

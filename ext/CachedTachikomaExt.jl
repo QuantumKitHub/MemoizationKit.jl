@@ -90,9 +90,10 @@ function refresh!(m::Dashboard, now = time())
     m.lastrefresh = now
     trends = IdDict{AbstractCache, Trend}()
     m.rows = map(cache_info()) do (f, c)
-        s = STATS(cache_stats(c))
+        st = cache_stats(c)
+        s = STATS(st[fieldnames(STATS)])
         kind = c isa Cached.ClockCache ? "Clock" : string(nameof(typeof(c)))
-        Row(f, c, repr(f), kind, c.by !== nothing, s, trend!(trends, m.trends, c, s, elapsed))
+        Row(f, c, repr(f), kind, st.by !== nothing, s, trend!(trends, m.trends, c, s, elapsed))
     end
     m.trends = trends # drops the trends of caches that are gone
     return rebuild!(m)
@@ -179,7 +180,7 @@ end
 # The limit is set for the function, so that it persists, in its current measure
 # (`set_cache_size!` would discard the cache if `by` changed).
 function resize_row!(m::Dashboard, r::Row, n::Int)
-    set_cache_size!(r.f, n; by = r.cache.by)
+    set_cache_size!(r.f, n; by = Cached.cache_stats(r.cache).by)
     m.message = "set the limit of $(r.label) to $(_short(n, r.bytes))"
     return refresh!(m)
 end

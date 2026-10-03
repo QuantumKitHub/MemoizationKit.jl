@@ -64,7 +64,7 @@ with_private_preferences() do
         set_preferences!(Cached, "maxsize" => 7, "measure" => "count"; force = true)
         try
             fromcached(1)
-            @test only(cache_info(fromcached)).second.maxsize == 7
+            @test Cached.cache_stats(only(cache_info(fromcached)).second).maxsize == 7
         finally
             delete_preferences!(Cached, "maxsize", "measure"; force = true)
         end
@@ -77,11 +77,11 @@ with_private_preferences() do
         try
             Aqua.test_all(Key(1))
             Aqua.test_ambiguities(Key(1))
-            @test only(cache_info(Aqua.test_all)).second.maxsize == 3
-            @test only(cache_info(Aqua.test_ambiguities)).second.maxsize == 2
+            @test Cached.cache_stats(only(cache_info(Aqua.test_all)).second).maxsize == 3
+            @test Cached.cache_stats(only(cache_info(Aqua.test_ambiguities)).second).maxsize == 2
             # runtime settings still override preferences
             set_cache_size!(Aqua.test_all, 11)
-            @test only(cache_info(Aqua.test_all)).second.maxsize == 11
+            @test Cached.cache_stats(only(cache_info(Aqua.test_all)).second).maxsize == 11
         finally
             delete_preferences!(Aqua, "Cached"; force = true)
         end

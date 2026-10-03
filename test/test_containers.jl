@@ -38,6 +38,9 @@ end
     resize!(c; maxsize = 4)
     @test length(c) == 4
     @test cache_stats(c).currentsize == 4
+    empty!(c)
+    foreach(i -> c[i] = i, 1:20) # refills the freed slots, then evicts
+    @test length(c) == 4 && all(((k, v),) -> k == v, c)
     resize!(c; maxsize = 0)
     @test isempty(c)
     get!(() -> 1, c, 1)
@@ -51,9 +54,14 @@ end
     end
     c[1] # 1 becomes most recent, 2 is now least recent
     c[4] = 4
-    @test !haskey(c, 2)
-    @test collect(keys(Dict(c))) ⊆ [1, 3, 4]
-    @test first.(collect(c)) == [4, 1, 3] # iteration is most to least recent
+    @test !haskey(c, 2) && haskey(c, 1) && haskey(c, 3) # haskey does not count as use
+    c[5] = 5 # recency is now 4, 1, 3
+    @test !haskey(c, 3) && haskey(c, 1) && haskey(c, 4)
+    empty!(c)
+    foreach(i -> c[i] = i, 1:3)
+    c[2]
+    c[4] = 4 # the order is rebuilt from scratch after `empty!`
+    @test !haskey(c, 1) && haskey(c, 2)
 end
 
 @testset "ClockCache: second chance" begin

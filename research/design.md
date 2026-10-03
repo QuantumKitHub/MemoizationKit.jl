@@ -74,7 +74,11 @@ CacheStyle(f, args...) = GlobalLRUCache()     # default; users specialize per fu
 ## Containers
 
 Cached provides its own containers, so it no longer depends on LRUCache.jl.
-Both implement the same small interface: `get!`, `get`, `haskey`, `empty!`, `resize!`, `length`, and hit/miss statistics.
+Both are `AbstractDict`s with `get!`, `get`, `haskey`, `delete!`, `empty!`, `resize!`, `length`, iteration, and hit/miss statistics.
+
+- **Minimal public interface** (revised on 2026-10-03). A custom `AbstractCache` implements only what the machinery calls: `C{K,V}(; maxsize, by)`, `get!`, `empty!`, `resize!` and `cache_stats`, thread-safely, without holding a lock while computing a value (`docs/src/interface.md`). `show` derives from `cache_stats`; the `AbstractDict` methods are optional.
+  - `AbstractCache <: AbstractDict` is kept so that `LRU` and `ClockCache` stay dictionaries; dropping it would make a custom cache honest about not being one, at the cost of a breaking change.
+- **Shared implementation, internal.** `LRU` and `ClockCache` subtype the internal `SlotCache`, which implements every method once on a `Slots{V}` field (keys, values and sizes in numbered slots with a free list, the index, the size accounting, the statistics and the lock). Each is an eviction policy over slot numbers, in four hooks called with the lock held: `admit!`, `touch!`, `victim` and `forget!`. `empty!` frees every slot through `forget!`; iteration order is unspecified (`LRU` iterated in recency order before).
 
 - **`LRU{K,V}`** is array-backed. It uses a `Dict` index, slots stored in vectors, and `prev`/`next` stored as integer vectors. Nodes are never allocated, and eviction is exact LRU.
 - **The index is a `Dict{Key{Any},Int}`.** Each stored `Key{Any}` holds the key and its hash. Lookups probe it with a concretely typed `Key{K}`, whose `isequal` checks `s.key isa K` before comparing, so the comparison is static and the key is never boxed. A `Key{Any}` cannot serve as the probe: storing the key in an `Any` field boxes it (96 B per lookup on TensorKit-like keys).
