@@ -5,9 +5,9 @@
 #   # on one node: NPROCS processes sharing the node's database in DIR
 #   julia --project=test benchmark/disk_stress.jl DIR [NPROCS = 4] [NKEYS = 200]
 #
-#   # on several nodes (see `disk_stress.sbatch`): every task is a worker, each node writes
-#   # its own database file; then check the files
-#   srun julia --project=test benchmark/disk_stress.jl --worker DIR NKEYS
+#   # on several nodes: start one worker per process (e.g. with your job scheduler); each node
+#   # writes its own database file. Then check the files
+#   julia --project=test benchmark/disk_stress.jl --worker DIR NKEYS
 #   julia --project=test benchmark/disk_stress.jl --check DIR NKEYS
 #
 # `test/test_disk.jl` includes this file and calls `stress` on a temporary directory.
