@@ -14,7 +14,7 @@ Items marked **open** still need a decision.
 
 ## Non-goals for v0.1
 
-- ~~A disk-backed cache.~~ Added on 2026-10-02 as a second level below the RAM caches, see `research/disk-cache.md`.
+- ~~A disk-backed cache.~~ Added on 2026-10-02 as a second level below the RAM caches, see `docs/src/disk.md`.
 - A memory budget per process.
 
 ## Macro expansion (approach C)
@@ -143,7 +143,7 @@ Decided on 2026-10-01: per package **and** per function, through Preferences.jl.
   - Resizing calls `set_cache_size!` with the function's current measure.
   - It renders from a copy of the statistics, so it never holds a cache's lock across frames.
   - Without Tachikoma, calling it gives a `MethodError` with an error hint.
-- **Disk caching** (`CachedSQLiteExt`; the description is `research/disk-cache.md` and `docs/src/disk.md`).
+- **Disk caching** (`CachedSQLiteExt`; see `docs/src/disk.md`).
   - `DiskCacheStyle(f, args...)`, default `NoCache()`, chooses a `DiskCache{S}()` per function and argument type, independently of `CacheStyle`. Lookup: RAM, then on a RAM miss the disk, then compute and write both. `call` resolves it at compile time and forwards `NoCache` to the unchanged `_call`, so functions without a disk cache compile as before (RAM hits 35 ns, 0 allocations, the same as without the change).
   - One SQLite database per function, node and version, `<Module>.<f>-v<diskversion(f)>-<host>.sqlite`, in WAL mode, shared by the processes of a node. Versioning is the user's: `diskversion` is the only version (no Julia version), and the docs say `Serialization`'s format is not guaranteed across Julia versions. Directory: the `disk_path` preference, else the scratch space of the owning package (no node-local default; the docs give the GPFS/Ceph costs). Keys and values are written with the serializer type `S` (default `Serialization.Serializer`), keyed by the SHA-256 of the key bytes.
   - The core holds the styles, `diskversion`, `disk_artifact` and `disable_disk_caches!`/`enable_disk_caches!`; the extension implements the lookup and the management (`disk_cache_info`, `empty_disk_caches!`, `export_disk_cache`). Without SQLite.jl, a call errors with a hint.
