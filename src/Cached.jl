@@ -8,7 +8,7 @@ export cache_dashboard, enable_cache_timers!, disable_cache_timers!
 
 # documented API that is used qualified, e.g. by overloading `Cached.cachesize`
 @static if VERSION >= v"1.11.0-DEV.469"
-    eval(Meta.parse("public AbstractCache, Slots, admit!, touch!, victim, forget!, cache_stats, cachesize, implementation, instrument_label"))
+    eval(Meta.parse("public AbstractCache, cache_stats, cachesize, implementation, instrument_label"))
 end
 
 using Base: @lock
@@ -16,6 +16,7 @@ using ExprTools: ExprTools
 using Preferences: @load_preference, load_preference, has_preference, set_preferences!, delete_preferences!
 
 include("containers/interface.jl")
+include("containers/slots.jl")
 include("containers/lru.jl")
 include("containers/clock.jl")
 

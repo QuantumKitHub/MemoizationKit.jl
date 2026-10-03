@@ -4,92 +4,83 @@
 CurrentModule = Cached
 ```
 
-The containers of Cached, [`LRU`](@ref) and [`ClockCache`](@ref), are subtypes of
-[`Cached.AbstractCache`](@ref). They share all storage, locking and size accounting, and
-differ only in their eviction policy. A new container implements a policy in four methods,
-and can then be used anywhere the built-in ones are, e.g. as `GlobalCache{MyCache}()`.
+A [`Cached.AbstractCache`](@ref) is the container behind [`GlobalCache`](@ref) and
+[`TaskLocalCache`](@ref). Besides [`LRU`](@ref) and [`ClockCache`](@ref), any subtype
+`C{K, V} <: Cached.AbstractCache{K, V}` implementing these methods can be used:
 
-## What the generic code guarantees
+| Method | Contract |
+| :----- | :------- |
+| `C{K, V}(; maxsize, by)` | An empty cache. `maxsize` bounds the number of entries, or the sum of `by(value)` if `by !== nothing`. |
+| `get!(default, c, key)` | The value stored for `key`, or else `default()`, stored if it fits. Keys of different types are different entries. |
+| `empty!(c)` | Remove all entries, keeping the statistics. |
+| [`resize!(c; maxsize)`](@ref resize!(::Cached.AbstractCache)) | Set the size limit, evicting entries until they fit. |
+| [`Cached.cache_stats(c)`](@ref) | `(; hits, misses, length, currentsize, maxsize, by)` |
 
-- **Thread safety.** Every operation takes the cache's lock (a `ReentrantLock`), and every policy
-  method is called with it held. `get!` releases the lock while it computes a missing value, so
-  computations run in parallel and may recurse into the same cache. If two tasks compute the same
-  key, the first to finish stores it; an exception stores nothing.
-- **Keys that do not box.** Keys are stored as `Key{Any}`, with their hash, and looked up with a
-  concretely typed `Key{K}` probe. A hit does not allocate, also in a `C{Any, Any}` cache like
-  those of `@cached` functions, and eviction never re-hashes a key. Keys of different types are
-  different entries, even when they are `isequal`.
-- **Size accounting.** Each entry has a size: 1, or `by(value)` when the cache was made with a
-  `by` function. Inserting evicts, through the policy, until the new entry fits in `maxsize`.
-  A value larger than `maxsize` is returned but not stored.
-- **Slots.** Entries live in numbered slots, reused once freed. The policy only sees slot numbers;
-  the keys, values and sizes are in `c.slots` (a [`Cached.Slots`](@ref)), which it may read,
-  e.g. `c.slots.sizes[i]` for a size-aware policy.
-
-All of these methods are provided for any subtype:
-`get!`, `get`, `getindex`, `setindex!`, `haskey`, `delete!`, `empty!`, `length`, `isempty`,
-iteration (over a snapshot taken under the lock, in unspecified order), [`resize!`](@ref
-resize!(::Cached.AbstractCache)), [`Cached.cache_stats`](@ref) and `show`, besides everything an
-`AbstractDict` derives from these.
-
-## The policy interface
-
-A subtype `C{K, V} <: Cached.AbstractCache{K, V}`
-
-- has a field `slots::Cached.Slots{V}`;
-- has a constructor `C{K, V}(; maxsize, by)`, which is how [`GlobalCache`](@ref) and
-  [`TaskLocalCache`](@ref) create it;
-- tracks its occupied slots through these four methods:
-
-```@docs
-Cached.Slots
-Cached.admit!
-Cached.touch!
-Cached.victim
-Cached.forget!
-```
-
-Every slot passes through `admit!`, any number of `touch!` calls, and then `forget!`, either
-from an eviction (after `victim` chose it), a `delete!`, an overwrite or `empty!`.
+They may be called from any task, so they must be thread-safe, and `get!` must not hold a lock
+while it calls `default`, which may recurse into the same cache or throw.
+`show` is derived from `cache_stats`; the other `AbstractDict` methods are optional.
 
 ## Example: first in, first out
-
-A cache that evicts the oldest entry, ignoring hits:
 
 ```jldoctest fifo
 using Cached
 
 mutable struct FIFO{K, V} <: Cached.AbstractCache{K, V}
-    const slots::Cached.Slots{V}
-    const queue::Vector{Int} # occupied slots, oldest first
+    const entries::Dict{Any, Tuple{V, Int}} # (typeof(key), key) => (value, size)
+    const order::Vector{Any}                # keys of `entries`, oldest first
+    const lock::ReentrantLock
+    const by::Any
+    maxsize::Int
+    currentsize::Int
+    hits::Int
+    misses::Int
 end
 
 FIFO{K, V}(; maxsize = 10_000, by = nothing) where {K, V} =
-    FIFO{K, V}(Cached.Slots{V}(maxsize, by), Int[])
+    FIFO{K, V}(Dict{Any, Tuple{V, Int}}(), [], ReentrantLock(), by, maxsize, 0, 0, 0)
 
-Cached.admit!(c::FIFO, i::Int) = push!(c.queue, i)
-Cached.touch!(::FIFO, ::Int) = nothing
-Cached.victim(c::FIFO) = first(c.queue)
-Cached.forget!(c::FIFO, i::Int) = deleteat!(c.queue, findfirst(==(i), c.queue))
+function Base.get!(default::Base.Callable, c::FIFO{K, V}, key) where {K, V}
+    k = (typeof(key), key)
+    @lock c.lock begin
+        haskey(c.entries, k) && (c.hits += 1; return c.entries[k][1])
+        c.misses += 1
+    end
+    v = convert(V, default())::V # without the lock
+    @lock c.lock begin
+        haskey(c.entries, k) && return c.entries[k][1] # stored by another task meanwhile
+        sz = c.by === nothing ? 1 : Int(c.by(v))
+        c.entries[k] = (v, sz)
+        push!(c.order, k)
+        c.currentsize += sz
+        evict!(c)
+    end
+    return v
+end
 
-c = FIFO{Int, String}(; maxsize = 2)
-c[1] = "one"
-c[2] = "two"
-get!(() -> "uno", c, 1) # a hit, which does not keep 1
-c[3] = "three"          # evicts 1, the oldest
-sort!(collect(keys(c))), Cached.cache_stats(c)
+function evict!(c::FIFO)
+    while c.currentsize > c.maxsize
+        c.currentsize -= pop!(c.entries, popfirst!(c.order))[2]
+    end
+    return c
+end
+
+Base.empty!(c::FIFO) = @lock c.lock (empty!(c.entries); empty!(c.order); c.currentsize = 0; c)
+Base.resize!(c::FIFO; maxsize::Integer) = @lock c.lock (c.maxsize = maxsize; evict!(c))
+Cached.cache_stats(c::FIFO) =
+    @lock c.lock (; c.hits, c.misses, length = length(c.entries), c.currentsize, c.maxsize, c.by)
+
+@cached square(x) = x^2
+Cached.CacheStyle(::typeof(square), x) = GlobalCache{FIFO}()
+
+square.(1:3); square(3); square(3.0)
+set_cache_size!(square, 2) # evicts square(1) and square(2)
+square(1)
+only(cache_info(square)).second
 
 # output
 
-([2, 3], (hits = 1, misses = 0, length = 2, currentsize = 2, maxsize = 2, by = nothing))
+FIFO{Any, Any}(2/2 entries, 1 hits, 5 misses)
 ```
 
-`forget!` takes linear time here, which is fine for evictions (the victim is first in the queue)
-but not for frequent deletions; [`LRU`](@ref) keeps a doubly linked list in `prev`/`next`
-vectors instead. The test suite runs this `FIFO` through the same tests as the built-in caches.
-
-## Other locking schemes
-
-The generic methods take the lock on every lookup. A container that needs a different scheme,
-such as lock-free hits for a CLOCK policy, can still use `Slots` and the policy methods for its
-bookkeeping, and define its own `get!`, `get`, `getindex` and `haskey` for its type.
+`TaskLocalCache{FIFO}()` works the same way. This `FIFO` boxes its keys, so unlike `LRU` and
+`ClockCache` its hits allocate.
