@@ -38,17 +38,17 @@ function Slots{V}(maxsize::Integer, by) where {V}
     return Slots{V}(Dict{Key{Any}, Int}(), Key{Any}[], V[], Int[], Int[], 0, maxsize, by, 0, 0, ReentrantLock())
 end
 
-# Each slot passes through `_admit!`, any number of `_touch!` calls, then `_forget!` (on eviction,
+# Each slot passes through `admit!`, any number of `touch!` calls, then `forget!` (on eviction,
 # `delete!`, overwrite or `empty!`).
-# - `_admit!(c, i)`: track the entry just stored in slot `i`; a never-used slot is one past the
+# - `admit!(c, i)`: track the entry just stored in slot `i`; a never-used slot is one past the
 #   highest so far, so grow the per-slot metadata.
-# - `_touch!(c, i)`: a hit on slot `i`; runs on every hit, so keep it cheap.
-# - `_victim(c)`: the occupied slot to evict (`c` is not empty), then passed to `_forget!`.
-# - `_forget!(c, i)`: stop tracking slot `i`, which is freed afterwards.
-function _admit! end
-function _touch! end
-function _victim end
-function _forget! end
+# - `touch!(c, i)`: a hit on slot `i`; runs on every hit, so keep it cheap.
+# - `victim(c)`: the occupied slot to evict (`c` is not empty), then passed to `forget!`.
+# - `forget!(c, i)`: stop tracking slot `i`, which is freed afterwards.
+function admit! end
+function touch! end
+function victim end
+function forget! end
 
 # The probe for a key that is inserted: converted to `K`, which throws if that is not possible.
 _newkey(::SlotCache{K}, key) where {K} = Key(key isa K ? key : convert(K, key)::K)
@@ -72,7 +72,7 @@ function _insert!(c::SlotCache, p::Key, v, sz::Int)
     s = c.slots
     sz > s.maxsize && return c
     while s.currentsize + sz > s.maxsize && !isempty(s.index)
-        _free!(c, _victim(c))
+        _free!(c, victim(c))
     end
     k = Key{Any}(p.key, p.hash)
     if isempty(s.free)
@@ -86,14 +86,14 @@ function _insert!(c::SlotCache, p::Key, v, sz::Int)
     end
     s.index[k] = i
     s.currentsize += sz
-    _admit!(c, i)
+    admit!(c, i)
     return c
 end
 
 # Free slot `i`: drop it from the index and clear its key and value so they can be
 # garbage-collected while the slot sits on the free list.
 function _free!(c::SlotCache, i::Int)
-    _forget!(c, i)
+    forget!(c, i)
     s = c.slots
     delete!(s.index, s.keys[i])
     _unset!(s.keys, i)
@@ -118,7 +118,7 @@ function Base.get!(default::Base.Callable, c::SlotCache{K, V}, key) where {K, V}
         i = get(s.index, p, 0)
         if i != 0
             s.hits += 1
-            _touch!(c, i)
+            touch!(c, i)
             return s.vals[i]
         end
         s.misses += 1
@@ -137,7 +137,7 @@ end
 function Base.get(c::SlotCache, key, default)
     return @lock c.slots.lock begin
         i = _slot(c, key)
-        i == 0 ? default : (_touch!(c, i); c.slots.vals[i])
+        i == 0 ? default : (touch!(c, i); c.slots.vals[i])
     end
 end
 
@@ -145,7 +145,7 @@ function Base.getindex(c::SlotCache, key)
     return @lock c.slots.lock begin
         i = _slot(c, key)
         i == 0 && throw(KeyError(key))
-        _touch!(c, i)
+        touch!(c, i)
         c.slots.vals[i]
     end
 end
@@ -200,7 +200,7 @@ function Base.resize!(c::SlotCache; maxsize::Integer)
     @lock s.lock begin
         s.maxsize = maxsize
         while s.currentsize > s.maxsize && !isempty(s.index)
-            _free!(c, _victim(c))
+            _free!(c, victim(c))
         end
     end
     return c

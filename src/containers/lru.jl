@@ -18,7 +18,7 @@ end
 LRU{K, V}(; maxsize::Integer = 10_000, by = nothing) where {K, V} =
     LRU{K, V}(Slots{V}(maxsize, by), Int[], Int[], 0, 0)
 
-function _admit!(c::LRU, i::Int)
+function admit!(c::LRU, i::Int)
     i > length(c.prev) && (push!(c.prev, 0); push!(c.next, 0))
     c.prev[i] = 0
     c.next[i] = c.head
@@ -27,13 +27,13 @@ function _admit!(c::LRU, i::Int)
     return c
 end
 
-function _forget!(c::LRU, i::Int)
+function forget!(c::LRU, i::Int)
     p, n = c.prev[i], c.next[i]
     p == 0 ? (c.head = n) : (c.next[p] = n)
     n == 0 ? (c.tail = p) : (c.prev[n] = p)
     return c
 end
 
-_touch!(c::LRU, i::Int) = i == c.head ? c : _admit!(_forget!(c, i), i)
+touch!(c::LRU, i::Int) = i == c.head ? c : admit!(forget!(c, i), i)
 
-_victim(c::LRU) = c.tail
+victim(c::LRU) = c.tail
