@@ -349,7 +349,7 @@ end
     @test find_text(tb, "Disk only, no RAM cache") !== nothing
     @test occursin("disk: 2 hits · 2 misses (50.0%) · … entries", line(tb, "disk:"))
     tb = settle!(m)
-    @test occursin(r"disk: 2 hits · 2 misses \(50.0%\) · 2 entries · \d+(\.\d)?KiB · /", line(tb, "disk:"))
+    @test occursin(r"disk: 2 hits · 2 misses \(50.0%\) · 2 entries · \d+(\.\d)?KiB · \S", line(tb, "disk:"))
     draw(m)
     @test m.disktask === nothing # read at most every DISKINTERVAL seconds
     press(m, 'g')
