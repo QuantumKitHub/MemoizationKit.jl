@@ -13,13 +13,13 @@ With [TimerOutputs.jl](https://github.com/KristofferC/TimerOutputs.jl) loaded, [
 ```@example timer
 using Cached, TimerOutputs
 
-@cached fsymbol(a, b, c) = a + b * c
+@cached weights(a, b, c) = a + b * c
 @cached matrix(n::Int)::Matrix{Float64} = zeros(n, n)
 
 to = TimerOutput()
 enable_cache_timers!(@__MODULE__, to)   # the timer defaults to TimerOutputs' global one
 for i in 1:200
-    fsymbol(1 + i % 6, 1 + (7i) % 6, 1 + (13i) % 6)
+    weights(1 + i % 6, 1 + (7i) % 6, 1 + (13i) % 6)
     matrix(1 + i % 10)
 end
 disable_cache_timers!(@__MODULE__)
@@ -33,17 +33,18 @@ Enabling a package again replaces its timer.
 Do not enable timers during precompilation.
 
 What counts is the package that owns the function (including its submodules), not where `@cached` was written; modules outside packages, such as in the REPL, count separately.
-For instance, TensorKit times its own cached functions and those of TensorKitSectors, including the `@cached` methods of `TensorKitSectors.Fsymbol` defined in SUNRepresentations:
+For instance, if `MyPackage` adds `@cached` methods to a function `OtherPackage.f`, then `enable_cache_timers!(OtherPackage)` times them, and `enable_cache_timers!(MyPackage)` does not.
+A package that wants all of its cached functions timed enables the packages that own them:
 
 ```julia
-function TensorKit.enable_timers!()
-    enable_cache_timers!(TensorKit, GLOBAL_TIMER)
-    enable_cache_timers!(TensorKitSectors, GLOBAL_TIMER)
+function MyPackage.enable_timers!()
+    enable_cache_timers!(MyPackage, TIMER)
+    enable_cache_timers!(OtherPackage, TIMER)
 end
 ```
 
 The labels come from [`Cached.instrument_label`](@ref), `"lookup f"` and `"compute f"` by default; overload it to pick your own:
 
 ```julia
-Cached.instrument_label(::typeof(fsbraid), ::Val{:lookup}) = "bookkeeping: cache fsbraid"
+Cached.instrument_label(::typeof(expensive), ::Val{:lookup}) = "cache: expensive"
 ```

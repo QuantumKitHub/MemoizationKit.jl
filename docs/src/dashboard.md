@@ -26,28 +26,28 @@ push!(LOAD_PATH, env) # hide
 Core.eval(Main, :(using Cached)) # hide
 Core.eval(Main, quote # hide
     @cached fib(n::Int)::BigInt = n < 2 ? BigInt(n) : fib(n - 1) + fib(n - 2) # hide
-    @cached fsymbol(a, b, c) = a + b * c # hide
+    @cached weights(a, b, c) = a + b * c # hide
     @cached matrix(n::Int)::Matrix{Float64} = zeros(n, n) # hide
     @cached label(s::Symbol; upper::Bool = false)::String = upper ? uppercase(string(s)) : string(s) # hide
-    @cached wigner(j::Int)::Matrix{Float64} = ones(j, j) # hide
+    @cached kernel(j::Int)::Matrix{Float64} = ones(j, j) # hide
     Cached.CacheStyle(::typeof(fib), ::Int) = GlobalLRUCache() # hide
     Cached.DiskCacheStyle(::typeof(fib), ::Int) = DiskCache() # hide
-    Cached.CacheStyle(::typeof(wigner), ::Int) = NoCache() # hide
-    Cached.DiskCacheStyle(::typeof(wigner), ::Int) = DiskCache() # hide
+    Cached.CacheStyle(::typeof(kernel), ::Int) = NoCache() # hide
+    Cached.DiskCacheStyle(::typeof(kernel), ::Int) = DiskCache() # hide
     set_cache_size!(matrix, 2^20; by = Cached.cachesize) # hide
 end) # hide
 const Ext = Base.get_extension(Cached, :CachedTachikomaExt) # hide
 m = Ext.Dashboard(; interval = Inf) # hide
 for step in 1:40 # hide
     for i in 1:(20 + (37step) % 60) # hide
-        Main.fsymbol(1 + i % 6, 1 + (7i + step) % 6, 1 + (13i) % 6) # hide
+        Main.weights(1 + i % 6, 1 + (7i + step) % 6, 1 + (13i) % 6) # hide
     end # hide
-    step > 34 && foreach(i -> Main.fsymbol(1000step + i, 1, 1), 1:40) # a burst of new keys # hide
+    step > 34 && foreach(i -> Main.weights(1000step + i, 1, 1), 1:40) # a burst of new keys # hide
     step % 10 == 0 && empty_caches!(Main.fib) # then read back from disk # hide
     Main.fib(step + 20) # hide
     foreach(i -> Main.matrix(1 + (11i + 3step) % 40), 1:(1 + step % 9)) # hide
     foreach(i -> Main.label((:a, :b, :c)[1 + i % 3]; upper = isodd(step)), 1:(step % 7)) # hide
-    foreach(i -> Main.wigner(1 + (5i + step) % 24), 1:(2 + step % 5)) # hide
+    foreach(i -> Main.kernel(1 + (5i + step) % 24), 1:(2 + step % 5)) # hide
     Ext.refresh!(m, Float64(step)) # hide
 end # hide
 foreach(t -> filter!(r -> !occursin("doctest", r.label), t.rows), m.tabs) # functions of the doctests of other pages # hide

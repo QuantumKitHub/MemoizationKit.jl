@@ -107,8 +107,8 @@ combine.
 
 ```julia
 set_cache_preferences!(; maxsize = 100_000)
-set_cache_preferences!(TensorKit; measure = "bytes", maxsize = 2^30)
-set_cache_preferences!(TensorKit.fsbraid; maxsize = 50_000)
+set_cache_preferences!(MyPackage; measure = "bytes", maxsize = 2^30)
+set_cache_preferences!(MyPackage.expensive; maxsize = 50_000)
 ```
 """
 set_cache_preferences!(; settings...) = set_cache_preferences!(@__MODULE__; settings...)
