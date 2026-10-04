@@ -43,7 +43,7 @@ diskversion(f) = "1"
     Cached.disk_artifact(f) -> Union{Nothing, String}
 
 A directory with a read-only disk cache of `f`, made by [`export_disk_cache`](@ref), that is
-consulted before the cache of the node, e.g. `artifact"CGC"`. Defaults to `nothing`.
+consulted before the cache of the node, e.g. `artifact"results"`. Defaults to `nothing`.
 """
 disk_artifact(f) = nothing
 
