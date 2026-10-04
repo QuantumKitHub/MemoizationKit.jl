@@ -59,7 +59,8 @@ end
     cache_dashboard(; interval = 1.0, filter = "")
 
 Open an interactive terminal dashboard of the global caches: one row per function, with
-live hit rates and sizes, from which caches can be emptied or resized. The
+live hit rates and sizes, from which caches can be emptied or resized. A second tab lists the
+disk caches in use (see the disk caching docs), with their entries, size and hit rate. The
 statistics are re-read every `interval` seconds, and only functions whose name contains
 `filter` are shown.
 
@@ -100,6 +101,11 @@ const EXTENSIONS = (
     cache_dashboard => (:CachedTachikomaExt, "Tachikoma"),
     enable_cache_timers! => (:CachedTimerOutputsExt, "TimerOutputs"),
     disable_cache_timers! => (:CachedTimerOutputsExt, "TimerOutputs"),
+    disk_lookup => (:CachedSQLiteExt, "SQLite"),
+    disk_cache_info => (:CachedSQLiteExt, "SQLite"),
+    disk_cache_stats => (:CachedSQLiteExt, "SQLite"),
+    empty_disk_caches! => (:CachedSQLiteExt, "SQLite"),
+    export_disk_cache => (:CachedSQLiteExt, "SQLite"),
 )
 
 # Without the extension these functions have no methods; say how to get them. Calls with
@@ -108,7 +114,7 @@ function _extension_hint(io, exc, argtypes, kwargs)
     f = exc.f === Core.kwcall && length(exc.args) >= 2 ? exc.args[2] : exc.f
     for (g, (ext, pkg)) in EXTENSIONS
         f === g && Base.get_extension(@__MODULE__, ext) === nothing &&
-            print(io, "\n`$(nameof(g))` needs $pkg.jl: run `using $pkg` first.")
+            print(io, "\n`$(g === disk_lookup ? "DiskCache" : nameof(g))` needs $pkg.jl: run `using $pkg` first.")
     end
     return nothing
 end

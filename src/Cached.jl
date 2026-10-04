@@ -5,15 +5,20 @@ export CacheStyle, NoCache, GlobalCache, GlobalLRUCache, TaskLocalCache
 export LRU, ClockCache
 export cache_info, empty_caches!, set_cache_size!, set_cache_preferences!
 export cache_dashboard, enable_cache_timers!, disable_cache_timers!
+export DiskCacheStyle, DiskCache, disk_cache_info, empty_disk_caches!, export_disk_cache
+export disable_disk_caches!, enable_disk_caches!
 
 # documented API that is used qualified, e.g. by overloading `Cached.cachesize`
 @static if VERSION >= v"1.11.0-DEV.469"
-    eval(Meta.parse("public AbstractCache, cache_stats, cachesize, implementation, instrument_label"))
+    eval(Meta.parse("public AbstractCache, cache_stats, disk_cache_stats, cachesize, implementation, instrument_label, diskversion, disk_artifact"))
 end
 
 using Base: @lock
 using ExprTools: ExprTools
 using Preferences: @load_preference, load_preference, has_preference, set_preferences!, delete_preferences!
+using Serialization: AbstractSerializer, Serializer
+using Scratch: Scratch, get_scratch! # with SHA, for the SQLite extension
+using SHA: sha256
 
 include("containers/interface.jl")
 include("containers/slots.jl")
@@ -23,6 +28,7 @@ include("containers/clock.jl")
 include("registry.jl")
 include("preferences.jl")
 include("cachestyle.jl")
+include("disk.jl")
 include("call.jl")
 include("api.jl")
 include("macro.jl")

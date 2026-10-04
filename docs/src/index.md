@@ -12,20 +12,20 @@ Transparent, strategy-aware memoization for Julia functions.
 ```julia
 using Cached
 
-@cached function fusion(a, b; normalize = true)
+@cached function combine(a, b; normalize = true)
     # expensive computation
 end
 
-fusion(1, 2)              # computed
-fusion(1, 2)              # looked up in fusion's cache; the result is still inferred
-uncached(fusion, 1, 2)    # bypasses the cache
+combine(1, 2)              # computed
+combine(1, 2)              # looked up in combine's cache; the result is still inferred
+uncached(combine, 1, 2)    # bypasses the cache
 
 # choose the strategy per function and argument type
-Cached.CacheStyle(::typeof(fusion), a::Int, b::Int) = TaskLocalCache{LRU}()
+Cached.CacheStyle(::typeof(combine), a::Int, b::Int) = TaskLocalCache{LRU}()
 
-cache_info(fusion)        # hit/miss statistics
+cache_info(combine)        # hit/miss statistics
 cache_info(MyPackage)     # ... of all cached functions of a module, empty_caches! likewise
-set_cache_size!(fusion, 1_000)
+set_cache_size!(combine, 1_000)
 ```
 
 - [`@cached`](@ref) works on any method definition: positional, default, varargs and keyword
@@ -37,6 +37,8 @@ set_cache_size!(fusion, 1_000)
   [`NoCache`](@ref).
 - Default sizes are configured per package and per function through preferences; see
   [Configuration](configuration.md).
+- With SQLite.jl loaded, [`DiskCacheStyle`](@ref) keeps results on disk as well, below the
+  RAM cache, in one database per function and node; see [Disk caching](disk.md).
 - With Tachikoma.jl loaded, [`cache_dashboard`](@ref) opens a live terminal dashboard; see
   [Dashboard](dashboard.md).
 - With TimerOutputs.jl loaded, [`enable_cache_timers!`](@ref) times lookups and computations

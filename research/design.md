@@ -1,152 +1,86 @@
-# Design (v0.1)
+# Design
 
-Decisions for the rewrite, agreed on 2026-10-01.
-Background and the rejected alternatives are in the other notes in this folder.
-Items marked **open** still need a decision.
+The decisions behind Cached.jl and the invariants the code relies on. User-facing details are
+in `docs/src`; the prototype notes in this folder hold the rejected alternatives.
 
 ## Goals
 
-- Replace TensorKit's internal `@cached` and the hand-rolled caches in SUNRepresentations.jl: `CGC_CACHE`, `REDUCED_CGC_CACHE`, `FCACHE`/`FUCACHE`.
-- **Full type stability when it is available.** For a type-stable function called with concrete argument types, the call infers to the value type `V`, and a cache hit allocates nothing.
-- **Full argument support**: any number of positional arguments, varargs, default values, and keyword arguments.
-- **Precompilation-safe**: no `Core.eval`, no methods defined at runtime, no evaluation into other modules.
-- **Small and maintainable.** All strategy logic is ordinary code in Cached, and the macro does only syntax rewriting.
+- Replace TensorKit's internal `@cached` and the hand-rolled caches of SUNRepresentations.jl.
+- Type stability: a type-stable function called with concrete arguments infers to its value
+  type, and a cache hit allocates nothing.
+- Full argument support: positional, default, varargs and keyword arguments.
+- Precompilation-safe: no `Core.eval` or runtime method definitions in the call path.
+- Small and maintainable: the macro only rewrites syntax; all logic is ordinary code.
 
-## Non-goals for v0.1
+Non-goal: a memory budget per process.
 
-- A disk-backed cache. A later extension will generalize SUNRepresentations' JLD2 + Scratch + Pidfile setup.
-- A memory budget per process.
+## Macro
 
-## Macro expansion (approach C)
+`@cached` moves the body into `Cached.implementation(::typeof(f), args...; kw...)`, with
+defaults removed, and leaves `f` with its original signature calling
+`Cached.call(f, CacheStyle(f, args...), V, args, kw)`. Julia's lowering handles defaults and
+keywords, and dispatch on `typeof(f)` covers qualified names, operators and callable objects.
 
-The user's body moves into a method of a function that Cached owns, dispatching on `typeof(f)`.
-The user's own `f` keeps its exact signature, so Julia's lowering handles default values and keywords.
-
-```julia
-@cached function f(a::A, b::B = b0; k = 1)::R where {T}
-    body
-end
-```
-
-expands to approximately:
-
-```julia
-function Cached.implementation(::typeof(f), a::A, b::B; k) where {T}   # defaults removed; kwarg made required
-    body
-end
-
-function f(a::A, b::B = b0; k = 1) where {T}                           # user signature, verbatim
-    return Cached.call(f, CacheStyle(f, a, b), R, (a, b), (; k))::R
-end
-```
-
-- The key is always the tuple of positional arguments, with the keyword `NamedTuple` appended when there are keywords. So `K = Tuple{typeof.(args)..., typeof(kwargs)}`.
-- **`V`** is the return annotation when there is one. It is evaluated inside the method, so it may depend on `where` parameters, as `_fsdicttype(K)` does. Without an annotation, `Cached.call` uses `Core.Compiler.return_type` on `implementation` and falls back to `Any` when the result is not concrete.
-- **`Cached.uncached(f, args...; kw...)`** calls `implementation` directly. It replaces the old `f(NoCache(), x)`.
-- **Qualified names, operators, and functors** all work the same way, because dispatch is on `typeof(f)`. Examples are `TensorKitSectors.Fsymbol`, `Base.:*`, and `(x::Foo)(y)`.
-- **Duplicate `@cached` on the same method** is no longer a separate concern. It is ordinary method overwriting, which Julia already reports, so no registry check is needed.
+- The key is the tuple of positional arguments, plus the keyword `NamedTuple` if any.
+- `V` is the return annotation, or `Core.Compiler.return_type` of `implementation`, falling back
+  to `Any` when not concrete. The result is asserted `::V`, which keeps calls inferred.
 
 ## Strategies
 
-These keep TensorKit's names:
+`CacheStyle(f, args...)` picks `NoCache`, `GlobalCache{C}` or `TaskLocalCache{C}` per function
+and argument type; the default is `GlobalCache()`, whose container is the compile-time
+`container` preference (`ClockCache`). `DiskCacheStyle` (below) is independent of it.
 
-```julia
-abstract type CacheStyle end
-struct NoCache <: CacheStyle end
-struct TaskLocalCache{C} <: CacheStyle end    # C: a cache container type, or an AbstractDict
-struct GlobalCache{C} <: CacheStyle end
-const GlobalLRUCache = GlobalCache{LRU}
-
-CacheStyle(f, args...) = GlobalLRUCache()     # default; users specialize per function and argument type
-```
-
-`CacheStyle` only sees positional arguments, because keywords do not take part in dispatch.
-
-`Cached.call` has one method per strategy:
-
-- **`NoCache`**: calls `implementation(f, args...; kw...)`.
-- **`GlobalCache{C}`** and **`TaskLocalCache{C}`**: `get!(cache, key) do implementation(...) end::V`, where `cache` is the function's single `C{Any,Any}`.
-  - Revised on 2026-10-01, after the TensorKit integration. Each function originally had one typed sub-cache `C{K,V}` per key and value type. That bounded memory poorly: TensorKit reached about 50 sub-caches per function, and a single function's entries could exceed its limit by 100×.
-  - Calls stay inferred because of the `::V` assertion, not because of the cache type. The lookup does not box the key either, thanks to the probe keys described under Containers.
-  - Measured on `main` against this design: hits take the same time (35 vs 34 ns for `Int` keys; 126 vs 124 ns for TensorKit-like 4-leg tree keys), with zero allocation in both.
-  - For `TaskLocalCache`, the table is stored in `task_local_storage()`. A `Dict` would box untyped keys, so it is still typed per key and value type.
+- Each function has **one** global `C{Any,Any}` cache, which is its memory budget. Typed
+  sub-caches per signature bounded memory poorly (TensorKit reached ~50 per function).
+- Task-local caches live in `task_local_storage()` and are not registered.
 
 ## Containers
 
-Cached provides its own containers, so it no longer depends on LRUCache.jl.
-Both are `AbstractDict`s with `get!`, `get`, `haskey`, `delete!`, `empty!`, `resize!`, `length`, iteration, and hit/miss statistics.
+- The public `AbstractCache` interface is only what the machinery calls (`docs/src/interface.md`).
+  `AbstractCache <: AbstractDict` is kept so `LRU` and `ClockCache` stay dictionaries.
+- `LRU` and `ClockCache` share an internal `SlotCache` implementation on a `Slots` field and
+  differ only in four eviction hooks (`admit!`, `touch!`, `victim`, `forget!`).
+- The index is a `Dict{Key{Any},Int}` holding each key with its hash; lookups probe with a
+  concrete `Key{K}` whose `isequal` checks the type first, so hits never box the key. Keys of
+  different types are different entries (`f(3)` and `f(3.0)`).
+- One lock per cache; `get!` computes outside it, so functions may recurse into their own cache.
+- Lock contention on shared caches with cheap keys is real in microbenchmarks but did not show in
+  TensorKit's workloads. Lock-free `ClockCache` hits are parked on the `lockfree-clock` branch
+  (#9); `TaskLocalCache` is the workaround.
 
-- **Minimal public interface** (revised on 2026-10-03). A custom `AbstractCache` implements only what the machinery calls: `C{K,V}(; maxsize, by)`, `get!`, `empty!`, `resize!` and `cache_stats`, thread-safely, without holding a lock while computing a value (`docs/src/interface.md`). `show` derives from `cache_stats`; the `AbstractDict` methods are optional.
-  - `AbstractCache <: AbstractDict` is kept so that `LRU` and `ClockCache` stay dictionaries; dropping it would make a custom cache honest about not being one, at the cost of a breaking change.
-- **Shared implementation, internal.** `LRU` and `ClockCache` subtype the internal `SlotCache`, which implements every method once on a `Slots{V}` field (keys, values and sizes in numbered slots with a free list, the index, the size accounting, the statistics and the lock). Each is an eviction policy over slot numbers, in four hooks called with the lock held: `admit!`, `touch!`, `victim` and `forget!`. `empty!` frees every slot through `forget!`; iteration order is unspecified (`LRU` iterated in recency order before).
+## Registry
 
-- **`LRU{K,V}`** is array-backed. It uses a `Dict` index, slots stored in vectors, and `prev`/`next` stored as integer vectors. Nodes are never allocated, and eviction is exact LRU.
-- **The index is a `Dict{Key{Any},Int}`.** Each stored `Key{Any}` holds the key and its hash. Lookups probe it with a concretely typed `Key{K}`, whose `isequal` checks `s.key isa K` before comparing, so the comparison is static and the key is never boxed. A `Key{Any}` cannot serve as the probe: storing the key in an `Any` field boxes it (96 B per lookup on TensorKit-like keys).
-  - This holds for `C{Any,Any}` as well, where a plain `Dict{Any,…}` would allocate on every hit.
-  - Eviction never re-hashes, because the hash is stored.
-  - Keys of different types are different entries, even when `isequal` (`f(3)` and `f(3.0)`). Lookups on a typed cache convert the key to `K` first.
-- **`ClockCache{K,V}`** uses second-chance eviction: a ring of slots with a reference bit. A hit only sets the bit and never reorders the ring, which makes it cheap for read-heavy shared caches.
-- Each container takes a size limit, either a **count** or **bytes** measured by a `by` function. Each one holds its own lock. Task-local containers skip the lock.
-- **Default for `GlobalCache`: `ClockCache`.**
-  - On synthetic workloads (`benchmark/containers.jl`), it beat `LRU` everywhere single-threaded (28 vs 32 ns for an all-hit lookup) and had a slightly better hit rate under Zipf access. Both were 1.5–3× faster than LRUCache.jl.
-  - On the TensorKit and SUNRepresentations integration, the two were indistinguishable.
-  - It stays the default because a hit only sets a bit, which makes lock-free hits possible.
-- **open**: contention. With 8 threads, every container's per-lookup cost *rises* (all hits: about 50–75 ns, against 28–32 ns single-threaded), because every lookup takes the cache's single lock.
-  Sharding by key hash, or lock-free reads for `ClockCache`, are the candidate fixes. `TaskLocalCache` is the workaround meanwhile.
-
-## Limits
-
-**One budget per function**: the `maxsize` of its single cache, as a count or in bytes, covering all signatures together. The default is 10,000 entries, the same as TensorKit's caches before.
-
-```julia
-set_cache_size!(f, n; by = nothing)
-```
-
-The earlier per-sub-cache limit, the cap on the number of sub-caches (`maxsubcaches`, `set_max_subcaches!`) and the first-in-first-out dropping of whole sub-caches are gone.
-
-Defaults come from Preferences (below).
-
-## Registry and introspection
-
-- Caches are created at runtime, on the first call of each function. There is one per function, or one per container type if its `CacheStyle` selects several. Nothing is registered at load time.
-- **Lookups take no lock.** The hot path reads an immutable snapshot of an `IdDict` through an atomic field. Creating a cache rebuilds the snapshot under a lock, which is rare: it happens once per function.
-- **The lookup key is a constant type** when `f` is a singleton function: `Tuple{typeof(f), C{Any,Any}}`. Its hash is cached, so the lookup is cheap. Callable objects with fields fall back to an `(f, C)` tuple key, so each distinct instance gets its own cache.
-- `cache_info([f])` returns the live caches as `f => cache` pairs. Containers `show` as a one-line summary (type, size against the limit, hits, misses), so no separate summary type is needed, and the pairs can be emptied or resized directly. Container iteration walks a snapshot taken under the lock, so it is thread-safe.
-- `empty_caches!()` empties every cache, and `empty_caches!(f)` empties the caches of `f`.
-- Task-local tables are not visible to `cache_info`. **open**: whether that matters.
+Caches are created on a function's first call. The hot path reads an immutable `IdDict`
+snapshot through an atomic field, without locking; creating a cache republishes the snapshot
+under a lock. For singleton functions the lookup key is a constant type, so its hash is cached.
 
 ## Configuration
 
-Decided on 2026-10-01: per package **and** per function, through Preferences.jl. The full description is in `docs/src/configuration.md`.
+`maxsize` and `measure` (and the disk settings) come from Preferences.jl, resolved once per
+function at runtime: runtime calls, then `[<Package>.Cached.<f>]`, `[<Package>.Cached]`,
+`[Cached]`, built-in defaults. `<Package>` owns `parentmodule(typeof(f))`. Only `container` is
+compile-time. See `docs/src/configuration.md`.
 
-- Settings are `maxsize` and `measure` (`"count"` or `"bytes"`, the latter using `Cached.cachesize`).
-  - They are resolved once per function, when its first cache is created, in this order: runtime calls, then `[<Package>.Cached.<function>]`, then `[<Package>.Cached]`, then `[Cached]`, then the built-in defaults.
-  - `<Package>` is the package of `parentmodule(typeof(f))`. For functions extended by several packages, that is the owner of the function, not the extending packages.
-  - Reading them at runtime means they cost nothing at compile time and need no recompilation of user packages. Task-local caches use the same settings.
-- `container` (`"ClockCache"` or `"LRU"`) is a compile-time preference, `[Cached]` only, because it selects the default `CacheStyle`, which must be a constant.
-- `set_cache_preferences!` writes any of these sections, choosing the section from its argument: nothing for `[Cached]`, a package module, or a function. It merges with the existing tables, and a value of `nothing` removes a setting.
-- `measure = "bytes"` uses `Cached.cachesize(x)`, which defaults to `Base.summarysize` and is meant to be overloaded per value type.
+## Extensions
 
-## Hooks and extensions
-
-- **Timing** (`CachedTimerOutputsExt`): `enable_cache_timers!(M, timer = get_defaulttimer())` and `disable_cache_timers!(M)`. The user-facing description is `docs/src/timing.md`.
-  - Internally, calls go through `instrument(f, ::Val{phase}, thunk, ::Val{owner})`, `@inline`, default `thunk()`: it compiles away, with no load and no branch, and hits stay at 0 allocations. It is not a public extension point; only the TimerOutputs extension adds methods.
-  - Two nested phases, after TensorKit's `@timeit_debug` sections: `:lookup` wraps the whole `get!` of a global or task-local cache, `:compute` wraps the `implementation` call (nested in `:lookup` on a miss, alone under `NoCache`). `uncached` is not instrumented.
-  - `owner` is `fullname` of the package owning `f` (`parentmodule(typeof(f))`, walked up to the package root; modules outside packages own their functions themselves), folded at compile time by a `@generated` function. Enabling a package covers its submodules, and enabling TensorKitSectors times the `@cached Fsymbol` methods of SUNRepresentations too.
-  - Timing is a debugging feature and may recompile, like TimerOutputs' `enable_debug_timings(mod)`. A runtime switch (a `Ref`) cost a load and a branch on every call, and was dropped.
-  - `enable_cache_timers!` evals `instrument(f, phase, thunk, ::Val{owner}) = timeit(thunk, timer, instrument_label(f, phase))` into the extension module, invalidating only the callers of functions owned by that package. `disable_cache_timers!` deletes it with `Base.delete_method`, after which the callers recompile to the default (verified on 1.10 and 1.13: hits inferred, 0 allocations). Deleting a method that overwrote another revives the old one, so enabling again deletes the previous method first. Refuses to run during precompilation. Labels come from the public `Cached.instrument_label(f, ::Val{phase})`, `"lookup f"`/`"compute f"` by default.
-  - `f::F` static parameters in `call.jl` keep Julia specializing on `f`, otherwise the closures box it. The owner is computed in `_call`, outside the closures: computing it inside made Julia 1.10, and only 1.10, box the closure and key (32 B per hit) in the first caller compiled that inlines the hit.
-  - World age: the new method is seen from the next top-level statement on, or through `invokelatest`.
-  - Without TimerOutputs, calling either function gives a `MethodError` with an error hint, like `cache_dashboard`.
-- **`CachedTachikomaExt`**: a TUI for browsing caches, watching hit rates live, resizing, and emptying. Implemented as `cache_dashboard()`; the user-facing description is `docs/src/dashboard.md`.
-  - One row per cache, with Tachikoma `Gauge`s for the recent hit rate (last 10 refreshes) and the size against the limit, the container kind, and an activity sparkline.
-  - Resizing calls `set_cache_size!` with the function's current measure.
-  - It renders from a copy of the statistics, so it never holds a cache's lock across frames.
-  - Without Tachikoma, calling it gives a `MethodError` with an error hint.
-- **Disk extension**: deferred. See non-goals.
+- **Timing** (`CachedTimerOutputsExt`, `docs/src/timing.md`). Calls go through an internal
+  `instrument(f, phase, thunk, ::Val{owner})` that compiles to `thunk()`. Enabling a package
+  evals one method for its owner tuple into the extension (recompiling only its callers);
+  disabling deletes it. Enabling first deletes any existing method, since deleting an
+  overwriting method revives the old one. The owner is computed outside the closures:
+  otherwise Julia 1.10 boxes them.
+- **Dashboard** (`CachedTachikomaExt`, `docs/src/dashboard.md`). Renders from copied statistics,
+  never holding a cache lock across frames. Tabs for RAM and disk; the Disk tab uses in-memory
+  counters, and reads entries and sizes (`disk_cache_info`) in a background task, never on a
+  frame. Emptying and resizing act on RAM only.
+- **Disk** (`CachedSQLiteExt`, `docs/src/disk.md`). Below RAM: RAM, then artifact, then the
+  node's SQLite database, then compute. One WAL-mode database per function, version and host,
+  shared by the node's processes. `diskversion(f)` is the only version: keeping stored results
+  valid (including across Julia versions) is the user's responsibility. Functions without a
+  disk style compile exactly as before.
+- Each extension's entry points are stubs in the core with an error hint.
 
 ## Open questions
 
-- ~~**Functors**~~: resolved. The instance is passed to `implementation`, and instances with fields get their own cache, so the budget applies per instance.
-- **Revise**: should redefining a cached method empty that function's caches?
-- ~~**Inference**~~: resolved. `return_type` is the default for unannotated functions, falling back to `Any` when the result is not concrete. It folds at compile time, so a hit is fully inferred and allocates nothing.
+- Should redefining a cached method (Revise) empty its caches?
