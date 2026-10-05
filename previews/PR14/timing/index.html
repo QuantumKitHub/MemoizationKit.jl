@@ -14,17 +14,35 @@ disable_cache_timers!(@__MODULE__)
 to</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">────────────────────────────────────────────────────────────────────────────────
 <span class="sgr1">                                   Time                        Allocations    </span> ⋯
                      ────────────────────────────────    ───────────────────────
- Tot / % measured:             2.02s / 2.5%                   93.0MiB / 0.7%   ⋯
+ Tot / % measured:             1.91s / 2.3%                   83.7MiB / 0.8%   ⋯
  ──────────────────  ────────────────────────────────    ───────────────────────
  Section     ncalls    time    %tot     avg                alloc    %tot       ⋯
 ────────────────────────────────────────────────────────────────────────────────
- lookup ma…     200  32.5ms   65.6%   162μs <span class="sgr38_5" style="color:#d70000"> █████▎   </span>    471KiB   66.3%  2.35 ⋯
- └─ comput…      10  4.25μs    0.0%   425ns <span class="sgr38_5" style="color:#005faf">          </span>   3.86KiB    0.5%     3 ⋯
- lookup we…     200  17.1ms   34.4%  85.3μs  ██▊          239KiB   33.7%  1.20 ⋯
- └─ comput…       6   342ns    0.0%  57.0ns <span class="sgr38_5" style="color:#005faf">          </span>         ∅       ∅       ⋯
+ lookup ma…     200  29.3ms   66.6%   146μs <span class="sgr38_5" style="color:#d70000"> █████▍   </span>    471KiB   66.3%  2.35 ⋯
+ └─ comput…      10  3.20μs    0.0%   320ns <span class="sgr38_5" style="color:#005faf">          </span>   3.86KiB    0.5%     3 ⋯
+ lookup we…     200  14.7ms   33.4%  73.3μs  ██▋          239KiB   33.7%  1.20 ⋯
+ └─ comput…       6   330ns    0.0%  55.0ns <span class="sgr38_5" style="color:#005faf">          </span>         ∅       ∅       ⋯
 ────────────────────────────────────────────────────────────────────────────────
 <span class="sgr36">                                                               2 columns omitted</span>
 </code></pre><p>Timing is off by default and adds no overhead while off. Enabling or disabling it recompiles callers and takes effect from the next top-level statement. If a function enables timers and calls cached functions in the same invocation, use <code>invokelatest</code> for those calls. Enabling a package again replaces its timer. Do not enable timers during precompilation.</p><p>What counts is the package that owns the function (including its submodules), not where <code>@cached</code> was written; modules outside packages, such as in the REPL, count separately. For instance, if <code>MyPackage</code> adds <code>@cached</code> methods to a function <code>OtherPackage.f</code>, then <code>enable_cache_timers!(OtherPackage)</code> times them, and <code>enable_cache_timers!(MyPackage)</code> does not. A package that wants all of its cached functions timed enables the packages that own them:</p><pre><code class="language-julia hljs">function MyPackage.enable_timers!()
     enable_cache_timers!(MyPackage, TIMER)
     enable_cache_timers!(OtherPackage, TIMER)
-end</code></pre><p>The labels come from <a href="../reference/#Cached.instrument_label"><code>Cached.instrument_label</code></a>, <code>&quot;lookup f&quot;</code> and <code>&quot;compute f&quot;</code> by default; overload it to pick your own:</p><pre><code class="language-julia hljs">Cached.instrument_label(::typeof(expensive), ::Val{:lookup}) = &quot;cache: expensive&quot;</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../dashboard/">« Dashboard</a><a class="docs-footer-nextpage" href="../keys/">Custom cache keys »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.19.0 on <span class="colophon-date" title="Monday 5 October 2026 18:34">Monday 5 October 2026</span>. Using Julia version 1.13.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+end
+
+MyPackage.enable_timers!()
+OtherPackage.f(2)
+disable_cache_timers!(MyPackage)
+disable_cache_timers!(OtherPackage)
+TIMER</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">────────────────────────────────────────────────────────────────────────────────
+<span class="sgr1">                                   Time                        Allocations    </span> ⋯
+                     ────────────────────────────────    ───────────────────────
+ Tot / % measured:            149ms / 10.2%                   12.4MiB / 1.9%   ⋯
+ ──────────────────  ────────────────────────────────    ───────────────────────
+ Section     ncalls    time    %tot     avg                alloc    %tot       ⋯
+────────────────────────────────────────────────────────────────────────────────
+ lookup f         1  15.2ms  100.0%  15.2ms <span class="sgr38_5" style="color:#d70000"> ████████ </span>    238KiB  100.0%   238 ⋯
+ └─ comput…       1   170ns    0.0%   170ns <span class="sgr38_5" style="color:#005faf">          </span>         ∅       ∅       ⋯
+────────────────────────────────────────────────────────────────────────────────
+<span class="sgr36">                                                               2 columns omitted</span>
+</code></pre><p>The labels come from <a href="../reference/#Cached.instrument_label"><code>Cached.instrument_label</code></a>, <code>&quot;lookup f&quot;</code> and <code>&quot;compute f&quot;</code> by default; overload it to pick your own:</p><pre><code class="language-julia hljs">Cached.instrument_label(::typeof(weights), ::Val{:lookup}) = &quot;cache: weights&quot;
+Cached.instrument_label(weights, Val(:lookup))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">&quot;cache: weights&quot;</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../dashboard/">« Dashboard</a><a class="docs-footer-nextpage" href="../keys/">Custom cache keys »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.19.0 on <span class="colophon-date" title="Monday 5 October 2026 18:48">Monday 5 October 2026</span>. Using Julia version 1.13.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
