@@ -6,67 +6,70 @@
 [![Code Style: Runic](https://img.shields.io/badge/code_style-%F0%9F%AA%A8_Runic-9558B2)](https://github.com/fredrikekre/Runic.jl)
 [![Aqua](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
 
-Transparent, strategy-aware memoization for Julia functions.
+Memoization for Julia, with bounded memory, persistent results, and a live view of your caches.
 
-> [!WARNING]
-> This package is under active development and its API may still change.
-> The design is described in [`research/design.md`](research/design.md).
+- **Disk-backed caching:** reuse expensive results across runs with SQLite.jl, or ship precomputed results as artifacts.
+- **Live dashboard:** watch hit rates and sizes, browse RAM and disk caches, and clear or resize RAM caches from your terminal.
+- **Fast RAM hits:** preserve return-type inference and avoid allocations with the built-in caches and concrete keys.
+- **Flexible strategies:** share results across tasks, keep them local to a task, or skip caching for selected argument types.
+- **Custom keys:** reuse results for equivalent inputs with `Cached.cachekey`, or customize hashing and equality with `Hashed`.
+- **Bounded storage:** Clock and LRU eviction, with limits in entries or bytes across a function's methods.
+- **Package controls:** set defaults per package or function, inspect caches programmatically, and profile lookups and computations with TimerOutputs.jl.
 
 ```julia
 using Cached
 
-@cached function combine(a, b; normalize = true)
-    # expensive computation
+@cached function fib(n::Int)::BigInt
+    n < 2 ? BigInt(n) : fib(n - 1) + fib(n - 2)
 end
 
-combine(1, 2)              # computed
-combine(1, 2)              # looked up in combine's cache; the result is still inferred
-uncached(combine, 1, 2)    # bypasses the cache
-
-# choose the strategy per function and argument type
-Cached.CacheStyle(::typeof(combine), a::Int, b::Int) = TaskLocalCache{LRU}()
-
-cache_info(combine)        # hit/miss statistics
-cache_info(MyPackage)     # ... of all cached functions of a module, empty_caches! likewise
-set_cache_size!(combine, 1_000)
+fib(100)                  # compute and cache
+fib(100)                  # reuse the result
+cache_info(fib)           # size and hit/miss statistics
+set_cache_size!(fib, 1000) # bound the cache
 ```
 
-Default sizes can be configured per package and per function through `LocalPreferences.toml`; see the [configuration docs](https://lkdvos.github.io/Cached.jl/dev/configuration/).
+## Keep results across runs
 
-Specialize `Cached.cachekey` to share results between equivalent inputs while the function
-body receives the original arguments:
-
-```julia
-Cached.cachekey(::typeof(combine), a, b; normalize = true) =
-    (Hashed(a, customhash, customequal), b, normalize)
-```
-
-The hook may also return a canonical key, allowing calls to different methods or argument
-types to share an entry. Merged calls must accept the same cached result and return type.
-`Hashed` customizes RAM equality; disk entries are matched by serialized key bytes.
-See the [custom cache keys guide](https://lkdvos.github.io/Cached.jl/dev/keys/) for examples.
-
-With [SQLite.jl](https://github.com/JuliaDatabases/SQLite.jl) loaded, results can also be kept on disk, below the RAM cache, in one database per function and node:
+Load SQLite.jl and opt a function into disk caching:
 
 ```julia
 using SQLite
-Cached.DiskCacheStyle(::typeof(combine), a, b) = DiskCache()
-disk_cache_info(combine)   # its database on this node: path, entries, size
+Cached.DiskCacheStyle(::typeof(fib), ::Int) = DiskCache()
+fib(200) # new results are kept in RAM and on disk
 ```
 
-See the [disk caching docs](https://lkdvos.github.io/Cached.jl/dev/disk/).
+Calls look in RAM, then on disk, before computing.
+Processes on the same machine share the database.
+You control result versions and disk cleanup; see [disk caching](https://lkdvos.github.io/Cached.jl/dev/disk/).
 
-With [TimerOutputs.jl](https://github.com/KristofferC/TimerOutputs.jl) loaded, `enable_cache_timers!(MyPackage, to)` times the lookups and computations of the cached functions owned by `MyPackage` and its submodules, and `disable_cache_timers!(MyPackage)` brings back the zero-cost default. See the [timing docs](https://lkdvos.github.io/Cached.jl/dev/timing/).
+## See what your caches are doing
 
-With [Tachikoma.jl](https://github.com/kahliburke/Tachikoma.jl) loaded, `cache_dashboard()` opens a live terminal dashboard to browse, empty and resize the caches, with a second tab for the disk caches; see the [dashboard docs](https://lkdvos.github.io/Cached.jl/dev/dashboard/).
+Load Tachikoma.jl to browse caches while your program runs:
+
+```julia
+using Tachikoma
+cache_dashboard()
+```
+
+The dashboard shows recent hit rates, storage use, and activity, with separate RAM and Disk tabs:
 
 ```text
 [RAM] │  Disk
- 4 caches · 325 entries · 175KiB in byte-measured caches · recent hit rate 70.3%
- Name ▲               Hit rate      Size                   Kind       Activity
-▌Main.fib             █████60%░░░░░ ▏░░░░░░░3/10k░░░░░░░░░ LRU+disk   ███████
- Main.label           ████100%█████ ▏░░░░░░░6/10k░░░░░░░░░ Clock      ▇█ ▁▃▄▅▇
+ Name                 Hit rate      Size                   Kind       Activity
+ Main.fib             █████60%░░░░░ ▏░░░░░░░3/10k░░░░░░░░░ Clock+disk ███████
  Main.matrix          ████100%█████ ███▊175KiB/1.0MiB░░░░░ Clock      ▆▇█▁▂▃▄▄
- Main.weights         █████67%▊░░░░ ▋░░░░░░276/10k░░░░░░░░ Clock      ▄█▆▃▇▅▂▆
- ⇥ tab  ↑↓ select  ⏎ resize  e empty  s sort  r reverse  / filter  g refresh  q quit
+ ⇥ tab  ↑↓ select  ⏎ resize  e empty  s sort  / filter  q quit
 ```
+
+See the [dashboard guide](https://lkdvos.github.io/Cached.jl/dev/dashboard/) for controls and statistics.
+
+## Why Cached?
+
+Choose Cached when memoization needs ongoing management: memory limits, reuse across runs, or visibility into a running workload.
+It brings these tools together with strategies chosen by function and argument type.
+For a single in-memory cache, Memoize.jl or Memoization.jl with an LRU container may already cover your needs.
+See [the comparison and tradeoffs](https://lkdvos.github.io/Cached.jl/dev/#why-cached).
+
+Requires Julia 1.10 or later.
+Start with [usage](https://lkdvos.github.io/Cached.jl/dev/#usage), [configuration](https://lkdvos.github.io/Cached.jl/dev/configuration/), or [timing](https://lkdvos.github.io/Cached.jl/dev/timing/) in the [documentation](https://lkdvos.github.io/Cached.jl/dev/).

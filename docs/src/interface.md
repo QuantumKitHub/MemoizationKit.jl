@@ -4,9 +4,8 @@
 CurrentModule = Cached
 ```
 
-A [`Cached.AbstractCache`](@ref) is the container behind [`GlobalCache`](@ref) and
-[`TaskLocalCache`](@ref). Besides [`LRU`](@ref) and [`ClockCache`](@ref), any subtype
-`C{K, V} <: Cached.AbstractCache{K, V}` implementing these methods can be used:
+A [`Cached.AbstractCache`](@ref) is the container behind [`GlobalCache`](@ref) and [`TaskLocalCache`](@ref).
+Besides [`LRU`](@ref) and [`ClockCache`](@ref), any subtype `C{K, V} <: Cached.AbstractCache{K, V}` implementing these methods can be used:
 
 | Method | Contract |
 | :----- | :------- |
@@ -16,8 +15,7 @@ A [`Cached.AbstractCache`](@ref) is the container behind [`GlobalCache`](@ref) a
 | [`resize!(c; maxsize)`](@ref resize!(::Cached.AbstractCache)) | Set the size limit, evicting entries until they fit. |
 | [`Cached.cache_stats(c)`](@ref) | `(; hits, misses, length, currentsize, maxsize, by)` |
 
-They may be called from any task, so they must be thread-safe, and `get!` must not hold a lock
-while it calls `default`, which may recurse into the same cache or throw.
+They may be called from any task, so they must be thread-safe, and `get!` must not hold a lock while it calls `default`, which may recurse into the same cache or throw.
 `show` is derived from `cache_stats`; the other `AbstractDict` methods are optional.
 
 ## Example: first in, first out
@@ -82,5 +80,5 @@ only(cache_info(square)).second
 FIFO{Any, Any}(2/2 entries, 1 hits, 5 misses)
 ```
 
-`TaskLocalCache{FIFO}()` works the same way. This `FIFO` boxes its keys, so unlike `LRU` and
-`ClockCache` its hits allocate.
+`TaskLocalCache{FIFO}()` works the same way.
+This `FIFO` boxes its keys, so unlike `LRU` and `ClockCache` its hits allocate.

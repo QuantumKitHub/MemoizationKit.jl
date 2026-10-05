@@ -18,7 +18,7 @@ end
 
 @cached converted(x)::Float64 = counting(x)
 
-# value type computed from a where parameter, as in TensorKit's `fsbraid`
+# value type computed from a where parameter
 valtype_of(::Type{T}) where {T} = Vector{T}
 @cached function dependent(x::T)::valtype_of(T) where {T}
     return counting([x])

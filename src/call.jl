@@ -10,6 +10,7 @@ function implementation end
     uncached(f, args...; kwargs...)
 
 Call the [`@cached`](@ref) function `f` without consulting or filling any cache.
+Supply all positional and keyword arguments, including those with defaults in `f`.
 """
 uncached(f, args...; kwargs...) = implementation(f, args...; kwargs...)
 
