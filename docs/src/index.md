@@ -25,7 +25,7 @@ using Pkg
 Pkg.add("Cached")
 ```
 
-```jldoctest
+```@example fib
 using Cached
 
 @cached function fib(n::Int)::BigInt
@@ -33,10 +33,6 @@ using Cached
 end;
 
 fib(100)
-
-# output
-
-354224848179261915075
 ```
 
 Calling `fib(100)` again reuses the stored result.
@@ -49,7 +45,7 @@ By default, each function gets a shared Clock cache with room for 10,000 entries
 Put [`@cached`](@ref) before a method definition.
 By default, its positional and keyword arguments form the cache key, and its body runs only on a miss.
 
-```jldoctest powers
+```@example powers
 using Cached
 
 @cached function powers(x::T, n::Int = 3; offset::T = zero(T))::Vector{T} where {T}
@@ -57,13 +53,6 @@ using Cached
 end;
 
 powers(2; offset = 1)
-
-# output
-
-3-element Vector{Int64}:
- 3
- 5
- 9
 ```
 
 The macro also supports varargs, qualified names, operators, and callable objects.
@@ -77,15 +66,8 @@ A type-stable body keeps calls inferred even though the shared cache holds resul
 Use [`uncached`](@ref) to call the body without reading or filling RAM or disk caches.
 Supply all arguments, including defaults: defaults belong to the wrapper, not the uncached body.
 
-```jldoctest powers
+```@example powers
 uncached(powers, 2, 3; offset = 1)
-
-# output
-
-3-element Vector{Int64}:
- 3
- 5
- 9
 ```
 
 ### Choosing a strategy
@@ -102,32 +84,21 @@ A strategy based on types can be resolved by the compiler.
 
 For example, give each task its own cache for a recursive computation:
 
-```jldoctest
+```@example tasklocal
 using Cached
 @cached fib(n::Int)::BigInt = n < 2 ? BigInt(n) : fib(n - 1) + fib(n - 2);
 
 Cached.CacheStyle(::typeof(fib), ::Int) = TaskLocalCache{LRU}();
 
 fib(10)
-
-# output
-
-55
 ```
 
 To skip caching floating-point calls to `powers`:
 
-```jldoctest powers
+```@example powers
 Cached.CacheStyle(::typeof(powers), ::AbstractFloat, ::Int) = NoCache();
 
 powers(2.0; offset = 1.0)
-
-# output
-
-3-element Vector{Float64}:
- 3.0
- 5.0
- 9.0
 ```
 
 `GlobalCache()` and `TaskLocalCache()` use the [configured container](configuration.md), Clock by default.
