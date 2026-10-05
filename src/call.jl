@@ -39,14 +39,11 @@ _callimpl(f, args, kw) = implementation(f, args...; kw...)
 # The disk strategy `DiskCacheStyle(f, args...)` is resolved here too; without disk caching, the
 # call is the same as before (`_call`).
 @inline call(f::F, style::CacheStyle, ::Type{V}, args::Tuple, kw::NamedTuple) where {F, V} =
-    _call(f, style, DiskCacheStyle(f, args...), V, _key(args, kw), args, kw)
+    _call(f, style, DiskCacheStyle(f, args...), V, _callkey(f, args, kw), args, kw)
 @inline call(f::F, style::CacheStyle, ::Nothing, args::A, kw::KW) where {F, A <: Tuple, KW <: NamedTuple} =
-    _call(f, style, DiskCacheStyle(f, args...), _inferred_valtype(Core.Compiler.return_type(_callimpl, Tuple{F, A, KW})), _key(args, kw), args, kw)
+    _call(f, style, DiskCacheStyle(f, args...), _inferred_valtype(Core.Compiler.return_type(_callimpl, Tuple{F, A, KW})), _callkey(f, args, kw), args, kw)
 
 _inferred_valtype(::Type{V}) where {V} = isconcretetype(V) ? V : Any
-
-_key(args::Tuple, ::NamedTuple{()}) = args
-_key(args::Tuple, kw::NamedTuple) = (args..., kw)
 
 # `f::F` forces specialization on the function, which Julia skips for `Function` arguments that
 # are only passed along; without it the closures would box `f` and allocate. The owner `o` is

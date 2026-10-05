@@ -3,6 +3,7 @@ module Cached
 export @cached, uncached
 export CacheStyle, NoCache, GlobalCache, GlobalLRUCache, TaskLocalCache
 export LRU, ClockCache
+export Hashed
 export cache_info, empty_caches!, set_cache_size!, set_cache_preferences!
 export cache_dashboard, enable_cache_timers!, disable_cache_timers!
 export DiskCacheStyle, DiskCache, disk_cache_info, empty_disk_caches!, export_disk_cache
@@ -10,7 +11,7 @@ export disable_disk_caches!, enable_disk_caches!
 
 # documented API that is used qualified, e.g. by overloading `Cached.cachesize`
 @static if VERSION >= v"1.11.0-DEV.469"
-    eval(Meta.parse("public AbstractCache, cache_stats, disk_cache_stats, cachesize, implementation, instrument_label, diskversion, disk_artifact"))
+    eval(Meta.parse("public AbstractCache, cache_stats, disk_cache_stats, cachesize, implementation, instrument_label, diskversion, disk_artifact, cachekey"))
 end
 
 using Base: @lock
@@ -29,6 +30,7 @@ include("registry.jl")
 include("preferences.jl")
 include("cachestyle.jl")
 include("disk.jl")
+include("keys.jl")
 include("call.jl")
 include("api.jl")
 include("macro.jl")
