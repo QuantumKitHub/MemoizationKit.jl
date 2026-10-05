@@ -82,6 +82,12 @@ reported once, and the call goes on without the disk.
 Keys and values are written with `Serialization`, indexed by the SHA-256 hash of the serialized
 key; the key is stored too, to guard against hash collisions.
 
+[`Cached.cachekey`](@ref) selects the key for both RAM and disk caching. To share disk entries
+between equivalent inputs, return a canonical representation that serializes to the same
+bytes. [`Hashed`](@ref) changes RAM hashing and equality, but its wrapped value is still
+serialized, so custom equality alone does not merge disk entries. See [Custom cache keys](keys.md)
+for examples and the equality contract.
+
 The serializer is a parameter of the style, `DiskCache(; serializer = Serializer)`. To choose
 the format of some types, define a serializer type with its own `serialize` and `deserialize`
 methods for them; everything else is written as by `Serialization`. A serializer is a mutable

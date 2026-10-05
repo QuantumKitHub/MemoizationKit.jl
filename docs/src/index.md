@@ -43,3 +43,20 @@ set_cache_size!(combine, 1_000)
   [Dashboard](dashboard.md).
 - With TimerOutputs.jl loaded, [`enable_cache_timers!`](@ref) times lookups and computations
   per package; see [Timing](timing.md).
+
+## Sharing results between inputs
+
+Specialize [`Cached.cachekey`](@ref) to share results between equivalent inputs. Return a
+canonical key to group calls, including calls to different methods or argument types, or use
+[`Hashed`](@ref) to customize hashing and equality without changing the input type.
+
+```julia
+@cached allocation_shape(x; copies = 1) = (length(x), copies)
+Cached.cachekey(::typeof(allocation_shape), x; copies = 1) = (length(x), copies)
+
+allocation_shape([1, 2])
+allocation_shape((3, 4)) # same key, shares the cached result
+```
+
+The function body receives the original arguments. See [Custom cache keys](keys.md) for
+working examples, keyword handling, equality requirements, and RAM and disk behavior.

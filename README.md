@@ -33,6 +33,19 @@ set_cache_size!(combine, 1_000)
 
 Default sizes can be configured per package and per function through `LocalPreferences.toml`; see the [configuration docs](https://lkdvos.github.io/Cached.jl/dev/configuration/).
 
+Specialize `Cached.cachekey` to share results between equivalent inputs while the function
+body receives the original arguments:
+
+```julia
+Cached.cachekey(::typeof(combine), a, b; normalize = true) =
+    (Hashed(a, customhash, customequal), b, normalize)
+```
+
+The hook may also return a canonical key, allowing calls to different methods or argument
+types to share an entry. Merged calls must accept the same cached result and return type.
+`Hashed` customizes RAM equality; disk entries are matched by serialized key bytes.
+See the [custom cache keys guide](https://lkdvos.github.io/Cached.jl/dev/keys/) for examples.
+
 With [SQLite.jl](https://github.com/JuliaDatabases/SQLite.jl) loaded, results can also be kept on disk, below the RAM cache, in one database per function and node:
 
 ```julia

@@ -6,10 +6,11 @@ Memoize a method. The body becomes a method of [`Cached.implementation`](@ref), 
 its signature (including default values and keyword arguments) but looks up the result in a
 cache selected by [`CacheStyle`](@ref)`(f, args...)`.
 
-The cache key is the tuple of positional arguments, followed by a `NamedTuple` of the keyword
-arguments if there are any. Results are stored in typed caches, one per key type: the value
-type is the return type annotation if present (it may depend on `where` parameters), and the
-inferred return type otherwise (or `Any` if inference does not give a concrete type).
+The key is chosen by [`Cached.cachekey`](@ref), which defaults to the tuple of positional
+arguments, followed by a `NamedTuple` of the keyword arguments if there are any. Custom keys
+can merge calls with different argument types. The value type is the return type annotation
+if present (it may depend on `where` parameters), and the inferred return type otherwise
+(or `Any` if inference does not give a concrete type).
 
 Works for any method definition: qualified names (`function Base.f(...)`), operators and
 callable objects (`(x::Foo)(args...)`). Use [`uncached`](@ref) to bypass the cache.

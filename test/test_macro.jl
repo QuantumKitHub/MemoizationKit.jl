@@ -89,6 +89,18 @@ Cached.CacheStyle(::typeof(tasklocal), x::Symbol) = TaskLocalCache{Dict}()
 Cached.CacheStyle(::typeof(tasklocal), x::Float64) = TaskLocalCache() # default container
 Cached.CacheStyle(::typeof(tasklocal), x::String) = GlobalCache()
 
+# Custom keys share entries while the implementations receive the original inputs.
+@cached keyshape(x::AbstractVector, n::Int = 2; offset = 0) = counting(n * length(x) + offset)
+@cached keyshape(x::Tuple, n::Int = 2; offset = 0) = counting(n * length(x) + offset)
+Cached.cachekey(::typeof(keyshape), x, n; offset) = (length(x), n, offset)
+Cached.cachekey(::typeof(keyshape), ::Vector{Nothing}, n; offset) = error("key hook must be bypassed")
+
+@cached wrapped(x) = counting(length(x))
+Cached.cachekey(::typeof(wrapped), x) =
+    Hashed(x, (x, seed) -> hash(length(x), seed), (x, y) -> isequal(length(x), length(y)))
+Cached.CacheStyle(::typeof(wrapped), ::Tuple) = TaskLocalCache{Dict}()
+keyallocs(f, x) = (f(x); @allocated f(x))
+
 @cached sized(x) = counting(x)
 @cached manytypes(x) = counting(x)
 
@@ -120,6 +132,25 @@ end
     @test ncalls(() -> full(1, 3, :a, :b; k = 5, z = 1)) == (11, 1)
     @test ncalls(() -> anon(Val(4))) == (4, 1)
     @test ncalls(() -> anon(Val(4))) == (4, 0)
+end
+
+@testset "custom keys" begin
+    @test ncalls(() -> keyshape([1, 2])) == (4, 1)
+    @test ncalls(() -> keyshape((3, 4), 2; offset = 0)) == (4, 0) # defaults, different method
+    @test ncalls(() -> keyshape([1.0, 2.0])) == (4, 0) # different element type
+    @test ncalls(() -> keyshape([3, 4], 3; offset = 1)) == (7, 1)
+    @test ncalls(() -> keyshape([1, 2], 3; offset = 2)) == (8, 1)
+    @test ncalls(() -> uncached(keyshape, [nothing, nothing], 2; offset = 0)) == (4, 1)
+    @test @inferred(keyshape((3, 4))) == 4
+    @test keyallocs(keyshape, (3, 4)) == 0
+
+    @test ncalls(() -> wrapped([1, 2])) == (2, 1)
+    @test ncalls(() -> wrapped([3, 4])) == (2, 0)
+    @test ncalls(() -> wrapped([1])) == (1, 1)
+    @test @inferred(wrapped([3, 4])) == 2
+    @test keyallocs(wrapped, [3, 4]) == 0
+    @test ncalls(() -> wrapped((1, 2))) == (2, 1) # custom key in a typed task-local Dict
+    @test ncalls(() -> wrapped((3, 4))) == (2, 0)
 end
 
 @testset "return types" begin
