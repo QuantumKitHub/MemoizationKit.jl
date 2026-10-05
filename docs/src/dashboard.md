@@ -14,6 +14,25 @@ cache_dashboard(; interval = 0.2, filter = "fs") # faster, only functions whose 
 ```
 
 It has two tabs, for the caches in RAM and on disk.
+
+Narrow terminals shorten names and drop columns.
+The minimum size is 40×8.
+
+| Key | Action |
+| :--- | :--- |
+| `Tab`, `1` / `2` | switch to the next tab / the RAM or Disk tab |
+| `↑` `↓`, `PgUp` `PgDn`, `Home` `End` | select a row |
+| `Enter` | resize the selected cache, in RAM |
+| `e` | empty the selected cache, in RAM |
+| `s` / `r` | sort by the next column / reverse the order, per tab |
+| `/` | filter by function name, on both tabs (`Enter` applies, `Esc` cancels) |
+| `g` | refresh now |
+| `q`, `Esc` | quit |
+
+Statistics are copied under brief locks, so the dashboard can run while other tasks use the caches.
+
+## RAM caches
+
 With a few example caches, the RAM tab looks like this (rendered while building these docs):
 
 ```@example dashboard
@@ -64,6 +83,13 @@ The header totals entries and byte-measured values; the selected row's details i
 Recent hit rates cover the last 10 refreshes.
 Task-local caches are not shown.
 
+In resize mode, `←` / `→` halve or double the limit, `[` / `]` adjust it by 10%, `Enter` applies, and `Esc` cancels.
+The preview uses the cache's current measure (entries or bytes); applying calls [`set_cache_size!`](@ref).
+
+Emptying and resizing act on RAM only.
+
+## Disk caches
+
 The Disk tab lists the disk caches opened in this process, including functions without a RAM cache:
 
 ```@example dashboard
@@ -83,23 +109,4 @@ Database sizes and entry counts are read in the background, at most every 10 sec
 `…` appears until they arrive.
 The header indicates when [`disable_disk_caches!`](@ref) has turned disk caching off.
 
-Narrow terminals shorten names and drop columns.
-The minimum size is 40×8.
-
-| Key | Action |
-| :--- | :--- |
-| `Tab`, `1` / `2` | switch to the next tab / the RAM or Disk tab |
-| `↑` `↓`, `PgUp` `PgDn`, `Home` `End` | select a row |
-| `Enter` | resize the selected cache, in RAM (see below) |
-| `e` | empty the selected cache, in RAM |
-| `s` / `r` | sort by the next column / reverse the order, per tab |
-| `/` | filter by function name, on both tabs (`Enter` applies, `Esc` cancels) |
-| `g` | refresh now |
-| `q`, `Esc` | quit |
-
-In resize mode, `←` / `→` halve or double the limit, `[` / `]` adjust it by 10%, `Enter` applies, and `Esc` cancels.
-The preview uses the cache's current measure (entries or bytes); applying calls [`set_cache_size!`](@ref).
-
-Emptying and resizing act on RAM only.
 Use [`empty_disk_caches!`](@ref) to clear persistent results outside the dashboard.
-Statistics are copied under brief locks, so the dashboard can run while other tasks use the caches.
