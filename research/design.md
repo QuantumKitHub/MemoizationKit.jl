@@ -21,7 +21,14 @@ defaults removed, and leaves `f` with its original signature calling
 `Cached.call(f, CacheStyle(f, args...), V, args, kw)`. Julia's lowering handles defaults and
 keywords, and dispatch on `typeof(f)` covers qualified names, operators and callable objects.
 
-- The key is the tuple of positional arguments, plus the keyword `NamedTuple` if any.
+- `cachekey(f, args...; kw...)` defaults to the tuple of positional arguments, plus the
+  keyword `NamedTuple` if any. Custom keys can merge calls of different argument types or
+  methods; those calls must admit the same result, including its return type. Computation
+  and strategy selection still use the original arguments.
+- `Hashed(value, hashf, eqf)` supplies custom hashing and equality without redefining them
+  on the input type. Wrappers require identical hash and equality callables (`===`) to
+  compare equal. Canonical keys can also merge disk entries; wrapper equality alone cannot,
+  because disk caching compares serialized bytes.
 - `V` is the return annotation, or `Core.Compiler.return_type` of `implementation`, falling back
   to `Any` when not concrete. The result is asserted `::V`, which keeps calls inferred.
 

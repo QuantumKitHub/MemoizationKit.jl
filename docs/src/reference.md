@@ -22,6 +22,15 @@ uncached
 Cached.implementation
 ```
 
+## Custom cache keys
+
+See [Custom cache keys](keys.md) for canonical keys, custom equality, and sharing across methods.
+
+```@docs
+Cached.cachekey
+Hashed
+```
+
 ## Strategies
 
 ```@docs
