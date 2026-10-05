@@ -12,6 +12,7 @@ on:
 permissions:
   contents: write
   statuses: write
+  pull-requests: write
 
 jobs:
   Documentation:
@@ -26,3 +27,32 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # For authentication with GitHub Actions token
           DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }} # For authentication with SSH deploy key
         run: julia --project=docs/ docs/make.jl
+      - name: Comment with documentation preview
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const marker = '<!-- cached-docs-preview -->';
+            const issue_number = context.issue.number;
+            const url = `https://lkdvos.github.io/Cached.jl/previews/PR${issue_number}/`;
+            const body = `${marker}\n[Preview the documentation](${url})`;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              ...context.repo,
+              issue_number,
+            });
+            const comment = comments.find(c =>
+              c.user.login === 'github-actions[bot]' && c.body?.includes(marker)
+            );
+            if (comment) {
+              await github.rest.issues.updateComment({
+                ...context.repo,
+                comment_id: comment.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number,
+                body,
+              });
+            }
