@@ -42,6 +42,27 @@ plainsquare(x) = square(x)
     @test path(square) == joinpath(DIR, EXT.storename(square) * "-$(EXT._sanitize(gethostname())).sqlite")
 end
 
+@cached canonical(x) = (CALLS[] += 1; length(x))
+Cached.cachekey(::typeof(canonical), x) = length(x)
+Cached.DiskCacheStyle(::typeof(canonical), x) = DiskCache()
+
+@cached wrapped(x) = (CALLS[] += 1; length(x))
+Cached.cachekey(::typeof(wrapped), x) =
+    Hashed(x, (x, seed) -> hash(length(x), seed), (x, y) -> isequal(length(x), length(y)))
+Cached.DiskCacheStyle(::typeof(wrapped), x) = DiskCache()
+
+@testset "custom keys" begin
+    @test ram_and_count(() -> canonical([1, 2])) == (2, 1)
+    @test ram_and_count(() -> canonical((3, 4))) == (2, 0) # same canonical key on disk
+    @test ram_and_count(() -> canonical([1])) == (1, 1)
+    @test entries(canonical) == 2
+
+    @test ram_and_count(() -> (wrapped([1, 2]), wrapped([3, 4]))) == ((2, 2), 1) # RAM equality
+    @test ram_and_count(() -> wrapped([3, 4])) == (2, 1) # different serialized key
+    @test ram_and_count(() -> wrapped([1, 2])) == (2, 0) # original key still on disk
+    @test entries(wrapped) == 2
+end
+
 @cached ondisk(x::Int)::Vector{Int} = (CALLS[] += 1; [x])
 Cached.CacheStyle(::typeof(ondisk), ::Int) = NoCache()
 Cached.DiskCacheStyle(::typeof(ondisk), ::Int) = DiskCache()

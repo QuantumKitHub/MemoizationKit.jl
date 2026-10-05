@@ -174,6 +174,8 @@ end
     @test ok[]
 end
 
+collisionhash(x, seed) = hash(0, seed)
+
 lookup(c, k) = get!(() -> error("not cached"), c, k)
 # measured inside a function: in the loop below the types vary, and a dynamic call boxes its arguments
 allocs(c, k) = (lookup(c, k); @allocated lookup(c, k))
@@ -192,4 +194,14 @@ allocs(c, k) = (lookup(c, k); @allocated lookup(c, k))
     c[heap] = 2
     @test allocs(c, bits) == 0
     @test allocs(c, heap) == 0
+end
+
+@testset "$C: custom equality and collisions" for C in CACHETYPES
+    c = C{Any, Int}()
+    key(x) = Hashed(x, collisionhash, (x, y) -> isequal(length(x), length(y)))
+    c[key([1, 2])] = 2
+    c[key([1])] = 1 # same hash, unequal key
+    @test c[key([3, 4])] == 2
+    @test c[key([5])] == 1
+    @test !haskey(c, key(Int[]))
 end
