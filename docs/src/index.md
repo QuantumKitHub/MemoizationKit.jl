@@ -117,8 +117,17 @@ fib(10)
 
 To skip caching floating-point calls to `powers`:
 
-```julia
-Cached.CacheStyle(::typeof(powers), ::AbstractFloat, ::Int) = NoCache()
+```jldoctest powers
+Cached.CacheStyle(::typeof(powers), ::AbstractFloat, ::Int) = NoCache();
+
+powers(2.0; offset = 1.0)
+
+# output
+
+3-element Vector{Float64}:
+ 3.0
+ 5.0
+ 9.0
 ```
 
 `GlobalCache()` and `TaskLocalCache()` use the [configured container](configuration.md), Clock by default.
@@ -138,15 +147,37 @@ Global caches are created on first use.
 Normally, one cache holds all cached methods and argument types of a function.
 If its strategy selects several container types, each gets a separate cache with the function's size limit.
 
-```julia
-cache_info(powers)                             # live f => cache pairs, with size and statistics
-cache_info(MyPackage)                          # functions owned by this module and submodules
-cache_info()                                   # all global caches
-set_cache_size!(powers, 1000)                   # count entries
-set_cache_size!(powers, 2^20; by = Cached.cachesize) # measure values in bytes
-empty_caches!(powers)                          # clear entries, keep hit/miss counters
-empty_caches!(MyPackage)                       # clear the package's global caches
+```@example management
+using Cached
+
+module MyPackage
+    using Cached
+    @cached powers(x) = [x^i for i in 1:3]
+end
+
+MyPackage.powers(2)
+cache_info(MyPackage) # functions owned by this module and submodules
 ```
+
+Resize a function's cache and inspect it after inserting three keys:
+
+```@example management
+set_cache_size!(MyPackage.powers, 2) # count entries
+foreach(MyPackage.powers, 1:3)
+cache_info(MyPackage.powers)
+```
+
+Switch to a byte limit, or clear a module's caches:
+
+```@example management
+set_cache_size!(MyPackage.powers, 2^20; by = Cached.cachesize)
+MyPackage.powers(2)
+empty_caches!(MyPackage) # keep hit/miss counters
+cache_info(MyPackage)
+```
+
+`cache_info()` and `empty_caches!()` act on all global caches.
+
 
 Shrinking a cache evicts entries; changing its size measure discards it.
 A value larger than the limit is returned but not retained by the built-in containers.

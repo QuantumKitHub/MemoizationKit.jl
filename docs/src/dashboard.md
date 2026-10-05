@@ -68,7 +68,7 @@ for step in 1:40 # hide
     foreach(i -> Main.kernel(1 + (5i + step) % 24), 1:(2 + step % 5)) # hide
     Ext.refresh!(m, Float64(step)) # hide
 end # hide
-foreach(t -> filter!(r -> !occursin("doctest", r.label), t.rows), m.tabs) # functions of the doctests of other pages # hide
+foreach(t -> filter!(r -> r.f in (Main.fib, Main.weights, Main.matrix, Main.label, Main.kernel), t.rows), m.tabs) # only this page's examples # hide
 Ext.rebuild!(m) # hide
 function preview(m, height) # hide
     tb = Tachikoma.TestBackend(100, height) # hide

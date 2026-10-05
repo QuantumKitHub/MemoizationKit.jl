@@ -36,15 +36,31 @@ What counts is the package that owns the function (including its submodules), no
 For instance, if `MyPackage` adds `@cached` methods to a function `OtherPackage.f`, then `enable_cache_timers!(OtherPackage)` times them, and `enable_cache_timers!(MyPackage)` does not.
 A package that wants all of its cached functions timed enables the packages that own them:
 
-```julia
+```@example owners
+using Cached, TimerOutputs # hide
+module MyPackage # hide
+    function enable_timers! end # hide
+end # hide
+module OtherPackage # hide
+    using Cached # hide
+    @cached f(x) = x^2 # hide
+end # hide
+TIMER = TimerOutput() # hide
 function MyPackage.enable_timers!()
     enable_cache_timers!(MyPackage, TIMER)
     enable_cache_timers!(OtherPackage, TIMER)
 end
+
+MyPackage.enable_timers!()
+OtherPackage.f(2)
+disable_cache_timers!(MyPackage)
+disable_cache_timers!(OtherPackage)
+TIMER
 ```
 
 The labels come from [`Cached.instrument_label`](@ref), `"lookup f"` and `"compute f"` by default; overload it to pick your own:
 
-```julia
-Cached.instrument_label(::typeof(expensive), ::Val{:lookup}) = "cache: expensive"
+```@example timer
+Cached.instrument_label(::typeof(weights), ::Val{:lookup}) = "cache: weights"
+Cached.instrument_label(weights, Val(:lookup))
 ```

@@ -55,12 +55,34 @@ Unknown keys and invalid values are ignored with a warning.
 
 Use [`set_cache_preferences!`](@ref) to write the sections, which merges with what is already there:
 
-```julia
+```@example preferences
 using Cached
-set_cache_preferences!(; maxsize = 50_000)                          # [Cached]
-set_cache_preferences!(MyPackage; measure = "bytes")                # [MyPackage.Cached]
-set_cache_preferences!(MyPackage.expensive; maxsize = 1000)          # [MyPackage.Cached.expensive]
-set_cache_preferences!(MyPackage.expensive; maxsize = nothing)       # remove a setting
+sample = include(joinpath(pkgdir(Cached), "docs", "examples", "package.jl")) # hide
+MyPackage = sample.package # hide
+with_preferences = sample.with_preferences # hide
+with_preferences() do # hide
+set_cache_preferences!(; maxsize = 50_000) # [Cached]
+println(read("LocalPreferences.toml", String))
+end # hide
+```
+
+For functions defined in your package, use package or function settings:
+
+```@example preferences
+with_preferences() do # hide
+set_cache_preferences!(MyPackage; measure = "bytes")       # [MyPackage.Cached]
+set_cache_preferences!(MyPackage.expensive; maxsize = 1000) # [MyPackage.Cached.expensive]
+println(read("LocalPreferences.toml", String))
+end # hide
+```
+
+Remove a setting by passing `nothing`:
+
+```@example preferences
+with_preferences() do # hide
+set_cache_preferences!(MyPackage.expensive; maxsize = nothing)
+println(read("LocalPreferences.toml", String))
+end # hide
 ```
 
 ## Measuring sizes
@@ -70,6 +92,17 @@ That traverses the whole value, which can be slow for large nested values, and c
 Keys and container overhead are excluded; this is a value budget, not a limit on total process memory.
 Overload it for your own types:
 
-```julia
-Cached.cachesize(t::MyTensor) = sizeof(t.data)
+```jldoctest
+using Cached
+
+struct MyTensor
+    data::Vector{Float64}
+end
+Cached.cachesize(t::MyTensor) = sizeof(t.data);
+
+Cached.cachesize(MyTensor(zeros(10)))
+
+# output
+
+80
 ```

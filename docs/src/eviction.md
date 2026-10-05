@@ -18,6 +18,18 @@ It removes the first entry it finds with a clear bit and continues from that pos
 New entries start with a clear bit: they get a second chance only after a cache hit.
 For example, fill a three-entry cache with A, B, and C, then hit A.
 Inserting D starts the hand at A, clears A's bit, and evicts B, whose bit is clear.
+```@example clockcache
+using Cached
+
+cache = ClockCache{Symbol, Int}(; maxsize = 3)
+for (key, value) in zip((:A, :B, :C), 1:3)
+    cache[key] = value
+end
+cache[:A] # a hit
+cache[:D] = 4
+sort!(collect(keys(cache))) # B was evicted
+```
+
 Unlike LRU, Clock does not track the exact order of hits.
 A recently inserted entry that has never been hit again can be evicted before an older entry that has been reused.
 
@@ -32,6 +44,18 @@ When space is needed, the least recently used entry is removed.
 
 For example, fill a three-entry cache with A, B, and C, then hit A.
 The order from least to most recently used becomes B, C, A, so inserting D evicts B.
+```@example lru
+using Cached
+
+cache = LRU{Symbol, Int}(; maxsize = 3)
+for (key, value) in zip((:A, :B, :C), 1:3)
+    cache[key] = value
+end
+cache[:A] # a hit
+cache[:D] = 4
+sort!(collect(keys(cache))) # B was evicted
+```
+
 Unlike Clock, LRU always retains the exact recency order, even after several hits between evictions.
 
 Choose LRU when that ordering suits the workload.
@@ -40,9 +64,15 @@ Neither policy guarantees a better hit rate for every workload; use the [dashboa
 
 ## Selecting a policy
 
-```julia
+```@example policy
+using Cached
+@cached expensive(x) = x^2
+@cached other(x) = 2x
+
 Cached.CacheStyle(::typeof(expensive), args...) = GlobalCache{LRU}()
 Cached.CacheStyle(::typeof(other), args...) = TaskLocalCache{ClockCache}()
+
+(CacheStyle(expensive, 3), CacheStyle(other, 3))
 ```
 
 To set the default container for `GlobalCache()` and `TaskLocalCache()`, use the `container` preference in [Configuration](configuration.md).
