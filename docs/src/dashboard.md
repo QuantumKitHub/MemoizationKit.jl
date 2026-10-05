@@ -87,7 +87,7 @@ Narrow terminals shorten names and drop columns.
 The minimum size is 40×8.
 
 | Key | Action |
-|:-|:-|
+| :--- | :--- |
 | `Tab`, `1` / `2` | switch to the next tab / the RAM or Disk tab |
 | `↑` `↓`, `PgUp` `PgDn`, `Home` `End` | select a row |
 | `Enter` | resize the selected cache, in RAM (see below) |

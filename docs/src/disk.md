@@ -26,7 +26,7 @@ Cached.DiskCacheStyle(::typeof(expensive), args...) = DiskCache()
 Both resolve at compile time, so functions without a disk cache are not affected, and a RAM hit costs the same with or without one.
 
 | `CacheStyle` | `DiskCacheStyle` | a call |
-|:-|:-|:-|
+| :--- | :--- | :--- |
 | `GlobalCache()` (default) | `NoCache()` (default) | RAM, else compute |
 | `GlobalCache()` | `DiskCache()` | RAM, else disk, else compute |
 | `NoCache()` | `DiskCache()` | disk, else compute, on every call |

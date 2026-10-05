@@ -9,7 +9,7 @@ Default cache settings are read with [Preferences.jl](https://github.com/JuliaPa
 ## Settings
 
 | Key | Values | Default | Meaning |
-|:-|:-|:-|:-|
+| :--- | :--- | :--- | :--- |
 | `maxsize` | integer ≥ 0 | `10000` | limit of a function's cache, all signatures together, in entries or bytes (see `measure`) |
 | `measure` | `"count"` or `"bytes"` | `"count"` | count entries, or measure values with [`Cached.cachesize`](@ref) |
 | `container` | `"ClockCache"` or `"LRU"` | `"ClockCache"` | container of the default `CacheStyle`; only in the `[Cached]` section |
