@@ -4,9 +4,8 @@
 CurrentModule = Cached
 ```
 
-[`cache_dashboard`](@ref) opens a terminal dashboard of the global caches, to browse them, watch
-their hit rates live, and empty or resize them while your program runs. It is a package
-extension on [Tachikoma.jl](https://github.com/kahliburke/Tachikoma.jl), so load Tachikoma first:
+[`cache_dashboard`](@ref) opens a terminal dashboard of the global caches, to browse them, watch their hit rates live, and empty or resize them while your program runs.
+It is a package extension on [Tachikoma.jl](https://github.com/kahliburke/Tachikoma.jl), so load Tachikoma first:
 
 ```julia
 using Cached, Tachikoma
@@ -14,8 +13,8 @@ cache_dashboard()                                # refreshes every second
 cache_dashboard(; interval = 0.2, filter = "fs") # faster, only functions whose name contains "fs"
 ```
 
-It has two tabs, for the caches in RAM and on disk. With a few example caches, the RAM tab
-looks like this (rendered while building these docs):
+It has two tabs, for the caches in RAM and on disk.
+With a few example caches, the RAM tab looks like this (rendered while building these docs):
 
 ```@example dashboard
 using Cached, Tachikoma, SQLite # hide
@@ -60,17 +59,12 @@ end # hide
 preview(m, 16) # hide
 ```
 
-The header sums all caches: their entries, the bytes of those measured in bytes, and the recent
-hit rate (over the last 10 refreshes). Each function is a row (or one per container type, in
-the rare case that its [`CacheStyle`](@ref) selects several). The columns are a bar for the
-recent hit rate (`-` without lookups), a bar for the size against the limit (in bytes for
-caches measured in bytes), the container (`LRU` or `Clock`, with `+disk` if the function also
-has a [disk cache](disk.md)), and a sparkline of hits per second. The panel at the bottom shows
-the numbers for the selected row, including its lifetime hit rate. Task-local caches are not
-shown.
+The RAM tab shows one row per function and container type: recent hit rate, size against its limit, cache kind, and hits per second.
+The header totals entries and byte-measured values; the selected row's details include lifetime statistics.
+Recent hit rates cover the last 10 refreshes.
+Task-local caches are not shown.
 
-The Disk tab (`Tab`, or `2`) lists the functions whose [disk cache](disk.md) is open in this
-process (with SQLite loaded), including those without a cache in RAM:
+The Disk tab lists the disk caches opened in this process, including functions without a RAM cache:
 
 ```@example dashboard
 m.tab = 2 # hide
@@ -81,18 +75,16 @@ filter!(!=(env), LOAD_PATH) # hide
 nothing # hide
 ```
 
-Its columns are the entries and size of each database on this node (the size includes the
-write-ahead log), the hit rate of the lookups on disk, and their activity; the panel adds the
-path of the database. Hits are results read from disk and misses results computed and written,
-counted in this process (see [`Cached.disk_cache_stats`](@ref)); the header sums them over all
-disk caches, with the total entries and size, and says when disk caches are off
-([`disable_disk_caches!`](@ref)). The entries and sizes come from [`disk_cache_info`](@ref),
-which is read in the background while the tab is shown, at most every 10 seconds (and on `g`),
-as counting the entries of a large database on a network file system can take a while; `…`
-shows until they arrive.
+The Disk tab shows database entries and size (including the write-ahead log), hit rate, and activity.
+The selected row adds the database path.
+Hit/miss counters cover this process; entries and sizes describe the database shared on this machine.
 
-The name column is as wide as the longest name; narrow terminals cut names in the middle and
-drop columns from the right, and below 40×8 the dashboard asks for a larger terminal.
+Database sizes and entry counts are read in the background, at most every 10 seconds while the tab is shown, or on `g`.
+`…` appears until they arrive.
+The header indicates when [`disable_disk_caches!`](@ref) has turned disk caching off.
+
+Narrow terminals shorten names and drop columns.
+The minimum size is 40×8.
 
 | Key | Action |
 |:-|:-|
@@ -105,12 +97,9 @@ drop columns from the right, and below 40×8 the dashboard asks for a larger ter
 | `g` | refresh now |
 | `q`, `Esc` | quit |
 
-In resize mode, `←` and `→` halve and double the limit, `[` and `]` change it by 10%, `Enter`
-applies and `Esc` cancels; the size bar previews the new limit. Applying calls
-[`set_cache_size!`](@ref) with the function's current measure (entries or bytes), so the limit
-persists for the function. Emptying and resizing act on the RAM tab only: a disk cache is
-persistent and may be shared with other processes, so it is emptied with
-[`empty_disk_caches!`](@ref) outside the dashboard.
+In resize mode, `←` / `→` halve or double the limit, `[` / `]` adjust it by 10%, `Enter` applies, and `Esc` cancels.
+The preview uses the cache's current measure (entries or bytes); applying calls [`set_cache_size!`](@ref).
 
-The statistics are read with [`cache_info`](@ref) and [`Cached.cache_stats`](@ref), which take each
-cache's lock only briefly, so the dashboard is safe to run while other tasks use the caches.
+Emptying and resizing act on RAM only.
+Use [`empty_disk_caches!`](@ref) to clear persistent results outside the dashboard.
+Statistics are copied under brief locks, so the dashboard can run while other tasks use the caches.

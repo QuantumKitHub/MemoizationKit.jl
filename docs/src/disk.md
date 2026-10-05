@@ -4,19 +4,17 @@
 CurrentModule = Cached
 ```
 
-Results that are expensive to compute can also be kept on disk, so that they survive the
-process. The disk is a second level below the cache in memory: a call looks in RAM first (as
-chosen by [`CacheStyle`](@ref)), then on disk, and only computes when both miss, after which the
-result is written to both.
+Results that are expensive to compute can also be kept on disk, so that they survive the process.
+The disk is a second level below the cache in memory: a call looks in RAM first (as chosen by [`CacheStyle`](@ref)), then on disk, and only computes when both miss, after which the result is written to both.
 
-Disk caching is a package extension on [SQLite.jl](https://github.com/JuliaDatabases/SQLite.jl):
-load it with `using SQLite`, or, in a package, add SQLite to its dependencies and `import SQLite`.
+Disk caching is a package extension on [SQLite.jl](https://github.com/JuliaDatabases/SQLite.jl): load it with `using SQLite`, or, in a package, add SQLite to its dependencies and `import SQLite`.
 
 ```julia
 using Cached, SQLite
 
 @cached function expensive(n::Int)::Matrix{Float64}
-    # takes long to compute
+    sleep(1) # stand-in for an expensive computation
+    [Float64(i == j) for i in 1:n, j in 1:n]
 end
 
 Cached.DiskCacheStyle(::typeof(expensive), args...) = DiskCache()
@@ -24,10 +22,8 @@ Cached.DiskCacheStyle(::typeof(expensive), args...) = DiskCache()
 
 ## Choosing what goes to disk
 
-[`DiskCacheStyle`](@ref)`(f, args...)` selects the disk strategy per function and argument
-types, independently of `CacheStyle`: [`NoCache()`](@ref NoCache) (the default) or a
-[`DiskCache`](@ref). Both resolve at compile time, so functions without a disk cache are not
-affected, and a RAM hit costs the same with or without one.
+[`DiskCacheStyle`](@ref)`(f, args...)` selects the disk strategy per function and argument types, independently of `CacheStyle`: [`NoCache()`](@ref NoCache) (the default) or a [`DiskCache`](@ref).
+Both resolve at compile time, so functions without a disk cache are not affected, and a RAM hit costs the same with or without one.
 
 | `CacheStyle` | `DiskCacheStyle` | a call |
 |:-|:-|:-|
@@ -37,61 +33,51 @@ affected, and a RAM hit costs the same with or without one.
 
 ## Where the data goes
 
-Each function has one SQLite database per machine, `<Module>.<f>-v<version>-<host>.sqlite`. The
-directory is the `disk_path` preference of the function, its package, or Cached (see
-[Configuration](configuration.md)), and by default a
-[scratch space](https://github.com/JuliaPackaging/Scratch.jl) of the package that owns `f`.
+Each function has one SQLite database per machine, `<Module>.<f>-v<version>-<host>.sqlite`.
+The directory is the `disk_path` preference of the function, its package, or Cached (see [Configuration](configuration.md)), and by default a [scratch space](https://github.com/JuliaPackaging/Scratch.jl) of the package that owns `f`.
 Functions outside packages (in scripts or the REPL) use a scratch space of Cached.
 
 ```julia
 set_cache_preferences!(MyPackage; disk_path = "/path/to/cache")
 ```
 
-- **One file per function and machine**, whatever the number of entries, which matters on file
-  systems that limit the number of files.
-- **Processes on one machine share the database**, reading and writing at the same time. A
-  write is a transaction, so an interrupted process never leaves a partial entry.
-- **Machines write separate files**, named after the host, since SQLite's locking does not work
-  across machines on a shared file system. Results are not shared between machines.
+- **One file per function and machine**, whatever the number of entries, which matters on file systems that limit the number of files.
+- **Processes on one machine share the database**, reading and writing at the same time.
+  A write is a transaction, so an interrupted process never leaves a partial entry.
+- **Machines write separate files**, named after the host, since SQLite's locking does not work across machines on a shared file system.
+  Results are not shared between machines.
 
-Every disk lookup takes SQLite's file locks. On a local disk a lookup takes microseconds; on a
-network file system the locks go over the network, which can make it orders of magnitude
-slower. That is negligible for results that take long to compute, which are the ones worth
-keeping on disk; otherwise, point `disk_path` at a local disk.
+Disk lookups take file locks, which can be slow on network storage.
+Use a local `disk_path` when possible, and reserve disk caching for expensive computations.
+Disk storage has no automatic size limit or eviction; use [`empty_disk_caches!`](@ref) to reclaim space in the current database.
 
 ## Versions
 
-The file name holds a version, [`Cached.diskversion(f)`](@ref), `"1"` by default. Keeping it
-current is up to you: bump it when the results of `f` change, and the old file is no longer
-read.
+The file name holds a version, [`Cached.diskversion(f)`](@ref), `"1"` by default.
+Keeping it current is up to you: bump it when the results of `f` change, and the old file is no longer read.
 
 ```julia
 Cached.diskversion(::typeof(expensive)) = "2"
 ```
 
-The default format is that of `Serialization`, which is not guaranteed to be readable by other
-Julia versions, nor after the definition of a stored type changes. Bump the version when that
-happens, or write a stable format with a serializer of your own (below).
+The default format is that of `Serialization`, which is not guaranteed to be readable by other Julia versions, nor after the definition of a stored type changes.
+Bump the version when that happens, or write a stable format with a serializer of your own (below).
 
-Entries that cannot be read, or are not of the value type of the call, count as misses and are
-overwritten. Errors of the disk itself, such as a full disk, never fail a call: they are
-reported once, and the call goes on without the disk.
+Entries that cannot be read, or are not of the value type of the call, count as misses and are overwritten.
+Errors of the disk itself, such as a full disk, never fail a call: they are reported once, and the call goes on without the disk.
 
 ## Formats
 
-Keys and values are written with `Serialization`, indexed by the SHA-256 hash of the serialized
-key; the key is stored too, to guard against hash collisions.
+Keys and values are written with `Serialization`, indexed by the SHA-256 hash of the serialized key; the key is stored too, to guard against hash collisions.
 
-[`Cached.cachekey`](@ref) selects the key for both RAM and disk caching. To share disk entries
-between equivalent inputs, return a canonical representation that serializes to the same
-bytes. [`Hashed`](@ref) changes RAM hashing and equality, but its wrapped value is still
-serialized, so custom equality alone does not merge disk entries. See [Custom cache keys](keys.md)
-for examples and the equality contract.
+[`Cached.cachekey`](@ref) selects the key for both RAM and disk caching.
+To share disk entries between equivalent inputs, return a canonical representation that serializes to the same bytes.
+[`Hashed`](@ref) changes RAM hashing and equality, but its wrapped value is still serialized, so custom equality alone does not merge disk entries.
+See [Custom cache keys](keys.md) for examples and the equality contract.
 
-The serializer is a parameter of the style, `DiskCache(; serializer = Serializer)`. To choose
-the format of some types, define a serializer type with its own `serialize` and `deserialize`
-methods for them; everything else is written as by `Serialization`. A serializer is a mutable
-`AbstractSerializer` with these fields and a constructor from an `IO`:
+The serializer is a parameter of the style, `DiskCache(; serializer = Serializer)`.
+To choose the format of some types, define a serializer type with its own `serialize` and `deserialize` methods for them; everything else is written as by `Serialization`.
+A serializer is a mutable `AbstractSerializer` with these fields and a constructor from an `IO`:
 
 ```julia
 using Serialization
@@ -118,22 +104,19 @@ end
 Cached.DiskCacheStyle(::typeof(expensive), args...) = DiskCache(; serializer = MySerializer)
 ```
 
-`writetag` and `OBJECT_TAG` are internals of `Serialization`, used the same way by
-`Distributed`'s `ClusterSerializer`.
+`writetag` and `OBJECT_TAG` are internals of `Serialization`, used the same way by `Distributed`'s `ClusterSerializer`.
 
 ## Turning it off
 
-[`disable_disk_caches!()`](@ref disable_disk_caches!) turns all disk caches off in this process,
-and [`enable_disk_caches!()`](@ref enable_disk_caches!) back on; while off, nothing is read from
-or written to disk. The `disk = false` preference turns them off per function, package, or
-globally:
+[`disable_disk_caches!()`](@ref disable_disk_caches!) turns all disk caches off in this process, and [`enable_disk_caches!()`](@ref enable_disk_caches!) back on; while off, nothing is read from or written to disk.
+The `disk = false` preference turns them off per function, package, or globally:
 
 ```julia
 set_cache_preferences!(MyPackage; disk = false)
 ```
 
-`disk` and `disk_path` are read when a function first uses its disk cache in a session. Disk
-caches are never used during precompilation.
+`disk` and `disk_path` are read when a function first uses its disk cache in a session.
+Disk caches are never used during precompilation.
 
 ## Managing disk caches
 
@@ -144,15 +127,12 @@ empty_disk_caches!(expensive)  # remove the entries
 Cached.disk_cache_stats()      # [expensive => (; hits, misses), ...] in this process
 ```
 
-[`disk_cache_info`](@ref) and [`empty_disk_caches!`](@ref) act on this machine's current
-database; files of older versions or other machines are left alone. The Disk tab of the
-[dashboard](dashboard.md) lists the open disk caches with these numbers.
+[`disk_cache_info`](@ref) and [`empty_disk_caches!`](@ref) act on this machine's current database; files of older versions or other machines are left alone.
+The Disk tab of the [dashboard](dashboard.md) lists the open disk caches with these numbers.
 
 ## Precomputed results as an artifact
 
-A package can ship precomputed results, read-only, as a
-[Pkg artifact](https://pkgdocs.julialang.org/v1/artifacts/): fill the disk cache, export it with
-[`export_disk_cache`](@ref), and point [`Cached.disk_artifact`](@ref) at the artifact.
+A package can ship precomputed results, read-only, as a [Pkg artifact](https://pkgdocs.julialang.org/v1/artifacts/): fill the disk cache, export it with [`export_disk_cache`](@ref), and point [`Cached.disk_artifact`](@ref) at the artifact.
 
 ```julia
 using Pkg.Artifacts
@@ -164,6 +144,5 @@ end
 Cached.disk_artifact(::typeof(expensive)) = artifact"expensive"
 ```
 
-A call then looks in RAM, the artifact, and this machine's database, in that order, and only
-then computes. New results go to the database; the artifact is never written, and holds the
-results of one version of `f`.
+A call then looks in RAM, the artifact, and this machine's database, in that order, and only then computes.
+New results go to the database; the artifact is never written, and holds the results of one version of `f`.

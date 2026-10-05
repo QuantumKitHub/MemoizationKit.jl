@@ -8,9 +8,13 @@ cache selected by [`CacheStyle`](@ref)`(f, args...)`.
 
 The key is chosen by [`Cached.cachekey`](@ref), which defaults to the tuple of positional
 arguments, followed by a `NamedTuple` of the keyword arguments if there are any. Custom keys
-can merge calls with different argument types. The value type is the return type annotation
-if present (it may depend on `where` parameters), and the inferred return type otherwise
-(or `Any` if inference does not give a concrete type).
+can merge calls with different argument types. Shared caches hold all key and value types
+of a function together (one cache per container type). The return type annotation, if
+present, may depend on `where` parameters; otherwise the value type is inferred, or `Any`
+if inference does not give a concrete type. Keys of different types are distinct entries.
+
+Use stable keys and treat cached mutable results as shared objects. Cache entries are not
+automatically invalidated when a method or external state changes.
 
 Works for any method definition: qualified names (`function Base.f(...)`), operators and
 callable objects (`(x::Foo)(args...)`). Use [`uncached`](@ref) to bypass the cache.

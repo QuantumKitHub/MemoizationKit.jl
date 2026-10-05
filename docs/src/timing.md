@@ -4,7 +4,7 @@
 CurrentModule = Cached
 ```
 
-With [TimerOutputs.jl](https://github.com/KristofferC/TimerOutputs.jl) loaded, [`enable_cache_timers!`](@ref) records the time spent in the cached functions of a package, in two nested sections per function:
+With [TimerOutputs.jl](https://github.com/KristofferC/TimerOutputs.jl) loaded, [`enable_cache_timers!`](@ref) records the time spent in the cached functions of a package, in sections per function:
 
 - `lookup f` wraps the whole cache lookup, hit or miss;
 - `compute f` wraps the call of the implementation: nested in `lookup f` on a miss, and on its own under [`NoCache`](@ref);
@@ -26,9 +26,9 @@ disable_cache_timers!(@__MODULE__)
 to
 ```
 
-Timing is a debugging tool, and works like TimerOutputs' `enable_debug_timings`.
-When it is off, the default, it costs nothing: a cache hit has not even an extra branch.
-Enabling or disabling a package recompiles the callers of its cached functions, and takes effect from the next top-level statement on: a function that enables the timers and then calls cached functions needs `invokelatest` for those calls.
+Timing is off by default and adds no overhead while off.
+Enabling or disabling it recompiles callers and takes effect from the next top-level statement.
+If a function enables timers and calls cached functions in the same invocation, use `invokelatest` for those calls.
 Enabling a package again replaces its timer.
 Do not enable timers during precompilation.
 

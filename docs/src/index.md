@@ -4,59 +4,42 @@
 CurrentModule = Cached
 ```
 
-Transparent, strategy-aware memoization for Julia functions.
+Cached reuses the results of Julia functions called with the same arguments.
+It is useful when repeated computations are expensive and their caches need limits, monitoring, or persistence.
 
-!!! warning
-    This package is under active development and its API may still change.
+- [`@cached`](@ref) keeps ordinary Julia method signatures, including defaults, keywords, varargs, and `where` parameters.
+- [`CacheStyle`](@ref) selects shared, task-local, or uncached execution per function and argument type.
+- Built-in [`ClockCache`](@ref) and [`LRU`](@ref) containers bound storage in entries or bytes.
+  With concrete keys and an inferred concrete return type, RAM hits do not allocate.
+- [`Cached.cachekey`](@ref) maps equivalent inputs to a shared result; see [Custom cache keys](keys.md).
+- [Preferences](configuration.md) set defaults per package or function; runtime tools inspect, clear, and resize global caches.
+- Optional extensions add [disk persistence](disk.md), a [terminal dashboard](dashboard.md), and [timing](timing.md).
+
+## Quick start
+
+Requires Julia 1.10 or later.
+Add Cached to your environment with Julia's package manager:
 
 ```julia
+using Pkg
+Pkg.add("Cached")
+```
+
+```jldoctest
 using Cached
 
-@cached function combine(a, b; normalize = true)
-    # expensive computation
-end
+@cached function fib(n::Int)::BigInt
+    n < 2 ? BigInt(n) : fib(n - 1) + fib(n - 2)
+end;
 
-combine(1, 2)              # computed
-combine(1, 2)              # looked up in combine's cache; the result is still inferred
-uncached(combine, 1, 2)    # bypasses the cache
+fib(100)
 
-# choose the strategy per function and argument type
-Cached.CacheStyle(::typeof(combine), a::Int, b::Int) = TaskLocalCache{LRU}()
+# output
 
-cache_info(combine)        # hit/miss statistics
-cache_info(MyPackage)     # ... of all cached functions of a module, empty_caches! likewise
-set_cache_size!(combine, 1_000)
+354224848179261915075
 ```
 
-- [`@cached`](@ref) works on any method definition: positional, default, varargs and keyword
-  arguments, `where` clauses, qualified names, operators and callable objects.
-- Each function has one cache, whose `maxsize` (in entries or bytes) is the budget for all its
-  signatures together. Calls stay type-stable, and cache hits do not allocate.
-- [`CacheStyle`](@ref) selects the strategy per function and argument type: a shared
-  [`GlobalCache`](@ref) (the default, a [`ClockCache`](@ref)), a [`TaskLocalCache`](@ref), or
-  [`NoCache`](@ref).
-- Default sizes are configured per package and per function through preferences; see
-  [Configuration](configuration.md).
-- With SQLite.jl loaded, [`DiskCacheStyle`](@ref) keeps results on disk as well, below the
-  RAM cache, in one database per function and node; see [Disk caching](disk.md).
-- With Tachikoma.jl loaded, [`cache_dashboard`](@ref) opens a live terminal dashboard; see
-  [Dashboard](dashboard.md).
-- With TimerOutputs.jl loaded, [`enable_cache_timers!`](@ref) times lookups and computations
-  per package; see [Timing](timing.md).
+Calling `fib(100)` again reuses the stored result.
+By default, each function gets a shared Clock cache with room for 10,000 entries across all its cached methods.
 
-## Sharing results between inputs
-
-Specialize [`Cached.cachekey`](@ref) to share results between equivalent inputs. Return a
-canonical key to group calls, including calls to different methods or argument types, or use
-[`Hashed`](@ref) to customize hashing and equality without changing the input type.
-
-```julia
-@cached allocation_shape(x; copies = 1) = (length(x), copies)
-Cached.cachekey(::typeof(allocation_shape), x; copies = 1) = (length(x), copies)
-
-allocation_shape([1, 2])
-allocation_shape((3, 4)) # same key, shares the cached result
-```
-
-The function body receives the original arguments. See [Custom cache keys](keys.md) for
-working examples, keyword handling, equality requirements, and RAM and disk behavior.
+Continue with [Usage](usage.md) for strategies and cache management, or [Why Cached?](comparison.md) for the motivation and comparison with other packages.
