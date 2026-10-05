@@ -16,6 +16,7 @@ end
 
 using Base: @lock
 using ExprTools: ExprTools
+using PrecompileTools: @setup_workload
 using Preferences: @load_preference, load_preference, has_preference, set_preferences!, delete_preferences!
 using Serialization: AbstractSerializer, Serializer
 using Scratch: Scratch, get_scratch! # with SHA, for the SQLite extension
@@ -34,6 +35,8 @@ include("keys.jl")
 include("call.jl")
 include("api.jl")
 include("macro.jl")
+# Source loading should not introduce the workload's module or helper methods.
+@setup_workload include("precompile.jl")
 
 function __init__()
     isdefined(Base.Experimental, :register_error_hint) &&
