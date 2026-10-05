@@ -11,7 +11,7 @@ Create additional worktrees beside the current checkout, never inside it.
 - `docs/src/`: user guides and API reference.
 - `benchmark/`: cache container and disk benchmarks.
 
-See `docs/src/usage.md` for behavior and `docs/src/interface.md` for the custom cache contract.
+See `docs/src/index.md` for behavior and `docs/src/interface.md` for the custom cache contract.
 
 ## Development
 

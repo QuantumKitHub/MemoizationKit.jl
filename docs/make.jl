@@ -13,9 +13,20 @@ makedocs(;
         assets = String[],
     ),
     pages = [
-        "Home" => "index.md", "Usage" => "usage.md", "Why Cached?" => "comparison.md",
-        "Custom cache keys" => "keys.md", "Configuration" => "configuration.md", "Dashboard" => "dashboard.md",
-        "Timing" => "timing.md", "Disk caching" => "disk.md", "Implementing a cache" => "interface.md",
+        "Home" => "index.md",
+        "Caches" => [
+            "Configuration" => "configuration.md",
+            "Eviction policies" => "eviction.md",
+            "Disk caching" => "disk.md",
+        ],
+        "Monitoring" => [
+            "Dashboard" => "dashboard.md",
+            "Timing" => "timing.md",
+        ],
+        "Customization" => [
+            "Custom cache keys" => "keys.md",
+            "Implementing a cache" => "interface.md",
+        ],
         "Reference" => "reference.md",
     ],
 )

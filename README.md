@@ -69,7 +69,7 @@ See the [dashboard guide](https://lkdvos.github.io/Cached.jl/dev/dashboard/) for
 Choose Cached when memoization needs ongoing management: memory limits, reuse across runs, or visibility into a running workload.
 It brings these tools together with strategies chosen by function and argument type.
 For a single in-memory cache, Memoize.jl or Memoization.jl with an LRU container may already cover your needs.
-See [the comparison and tradeoffs](https://lkdvos.github.io/Cached.jl/dev/comparison/).
+See [the comparison and tradeoffs](https://lkdvos.github.io/Cached.jl/dev/#why-cached).
 
 Requires Julia 1.10 or later.
-Start with [usage](https://lkdvos.github.io/Cached.jl/dev/usage/), [configuration](https://lkdvos.github.io/Cached.jl/dev/configuration/), or [timing](https://lkdvos.github.io/Cached.jl/dev/timing/) in the [documentation](https://lkdvos.github.io/Cached.jl/dev/).
+Start with [usage](https://lkdvos.github.io/Cached.jl/dev/#usage), [configuration](https://lkdvos.github.io/Cached.jl/dev/configuration/), or [timing](https://lkdvos.github.io/Cached.jl/dev/timing/) in the [documentation](https://lkdvos.github.io/Cached.jl/dev/).
