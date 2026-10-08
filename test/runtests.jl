@@ -1,4 +1,4 @@
-using Cached
+using MemoizationKit
 using ParallelTestRunner
 
-runtests(Cached, ARGS)
+runtests(MemoizationKit, ARGS)

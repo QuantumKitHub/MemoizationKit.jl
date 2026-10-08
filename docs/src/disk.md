@@ -1,7 +1,7 @@
 # Disk caching
 
 ```@meta
-CurrentModule = Cached
+CurrentModule = MemoizationKit
 ```
 
 Results that are expensive to compute can also be kept on disk, so that they survive the process.
@@ -10,11 +10,11 @@ The disk is a second level below the cache in memory: a call looks in RAM first 
 Disk caching is a package extension on [SQLite.jl](https://github.com/JuliaDatabases/SQLite.jl): load it with `using SQLite`, or, in a package, add SQLite to its dependencies and `import SQLite`.
 
 ```@example disk
-using Cached, SQLite
+using MemoizationKit, SQLite
 using Pkg.Artifacts # hide
 diskenv = mktempdir() # hide
-write(joinpath(diskenv, "Project.toml"), "[deps]\nCached = \"$(Base.PkgId(Cached).uuid)\"\n") # hide
-write(joinpath(diskenv, "LocalPreferences.toml"), "[Cached]\ndisk_path = $(repr(mktempdir()))\n") # hide
+write(joinpath(diskenv, "Project.toml"), "[deps]\nMemoizationKit = \"$(Base.PkgId(MemoizationKit).uuid)\"\n") # hide
+write(joinpath(diskenv, "LocalPreferences.toml"), "[MemoizationKit]\ndisk_path = $(repr(mktempdir()))\n") # hide
 push!(LOAD_PATH, diskenv) # hide
 computations = Ref(0)
 
@@ -23,7 +23,7 @@ computations = Ref(0)
     [Float64(i == j) for i in 1:n, j in 1:n]
 end
 
-Cached.DiskCacheStyle(::typeof(expensive), args...) = DiskCache()
+MemoizationKit.DiskCacheStyle(::typeof(expensive), args...) = DiskCache()
 expensive(2)
 ```
 
@@ -50,12 +50,12 @@ Both resolve at compile time, so functions without a disk cache are not affected
 ## Where the data goes
 
 Each function has one SQLite database per machine, `<Module>.<f>-v<version>-<host>.sqlite`.
-The directory is the `disk_path` preference of the function, its package, or Cached (see [Configuration](configuration.md)), and by default a [scratch space](https://github.com/JuliaPackaging/Scratch.jl) of the package that owns `f`.
-Functions outside packages (in scripts or the REPL) use a scratch space of Cached.
+The directory is the `disk_path` preference of the function, its package, or MemoizationKit (see [Configuration](configuration.md)), and by default a [scratch space](https://github.com/JuliaPackaging/Scratch.jl) of the package that owns `f`.
+Functions outside packages (in scripts or the REPL) use a scratch space of MemoizationKit.
 
 ```@example diskprefs
-using Cached # hide
-sample = include(joinpath(pkgdir(Cached), "docs", "examples", "package.jl")) # hide
+using MemoizationKit # hide
+sample = include(joinpath(pkgdir(MemoizationKit), "docs", "examples", "package.jl")) # hide
 MyPackage = sample.package # hide
 with_preferences = sample.with_preferences # hide
 with_preferences() do # hide
@@ -76,14 +76,14 @@ Disk storage has no automatic size limit or eviction; use [`empty_disk_caches!`]
 
 ## Versions
 
-The file name holds a version, [`Cached.diskversion(f)`](@ref), `"1"` by default.
+The file name holds a version, [`MemoizationKit.diskversion(f)`](@ref), `"1"` by default.
 Keeping it current is up to you: bump it when the results of `f` change, and the old file is no longer read.
 
 ```@example version
-using Cached # hide
+using MemoizationKit # hide
 @cached expensive(n) = n^2 # hide
-Cached.diskversion(::typeof(expensive)) = "2"
-Cached.diskversion(expensive)
+MemoizationKit.diskversion(::typeof(expensive)) = "2"
+MemoizationKit.diskversion(expensive)
 ```
 
 The default format is that of `Serialization`, which is not guaranteed to be readable by other Julia versions, nor after the definition of a stored type changes.
@@ -96,7 +96,7 @@ Errors of the disk itself, such as a full disk, never fail a call: they are repo
 
 Keys and values are written with `Serialization`, indexed by the SHA-256 hash of the serialized key; the key is stored too, to guard against hash collisions.
 
-[`Cached.cachekey`](@ref) selects the key for both RAM and disk caching.
+[`MemoizationKit.cachekey`](@ref) selects the key for both RAM and disk caching.
 To share disk entries between equivalent inputs, return a canonical representation that serializes to the same bytes.
 [`Hashed`](@ref) changes RAM hashing and equality, but its wrapped value is still serialized, so custom equality alone does not merge disk entries.
 See [Custom cache keys](keys.md) for examples and the equality contract.
@@ -134,11 +134,11 @@ function Serialization.deserialize(s::MySerializer, ::Type{Point})
 end
 
 @cached point(x::Int) = Point(x, 2x)
-Cached.DiskCacheStyle(::typeof(point), ::Int) = DiskCache(; serializer = MySerializer)
+MemoizationKit.DiskCacheStyle(::typeof(point), ::Int) = DiskCache(; serializer = MySerializer)
 point(4)
 empty_caches!(point)
 p = point(4) # read with the custom serializer
-@assert only(filter(p -> p.first === point, Cached.disk_cache_stats())).second.hits == 1 # hide
+@assert only(filter(p -> p.first === point, MemoizationKit.disk_cache_stats())).second.hits == 1 # hide
 (p.x, p.y)
 ```
 
@@ -174,14 +174,14 @@ only(disk_cache_info(expensive)).second.entries
 ```
 
 `disk_cache_info(MyPackage)` lists disk caches of functions owned by a module and its submodules.
-[`Cached.disk_cache_stats`](@ref) reports hit/miss counters for this process.
+[`MemoizationKit.disk_cache_stats`](@ref) reports hit/miss counters for this process.
 
 [`disk_cache_info`](@ref) and [`empty_disk_caches!`](@ref) act on this machine's current database; files of older versions or other machines are left alone.
 The Disk tab of the [dashboard](dashboard.md) lists the open disk caches with these numbers.
 
 ## Precomputed results as an artifact
 
-A package can ship precomputed results, read-only, as a [Pkg artifact](https://pkgdocs.julialang.org/v1/artifacts/): fill the disk cache, export it with [`export_disk_cache`](@ref), and point [`Cached.disk_artifact`](@ref) at the artifact.
+A package can ship precomputed results, read-only, as a [Pkg artifact](https://pkgdocs.julialang.org/v1/artifacts/): fill the disk cache, export it with [`export_disk_cache`](@ref), and point [`MemoizationKit.disk_artifact`](@ref) at the artifact.
 
 ```@example disk
 using Pkg.Artifacts
@@ -196,24 +196,24 @@ readdir(artifact_path(artifact_hash)) # the exported database
 Point the function at the exported artifact, then empty RAM and the node database:
 
 ```@example disk
-Cached.disk_artifact(::typeof(expensive)) = artifact_path(artifact_hash)
+MemoizationKit.disk_artifact(::typeof(expensive)) = artifact_path(artifact_hash)
 try # hide
 empty_caches!(expensive)
 empty_disk_caches!(expensive)
-Base.get_extension(Cached, :CachedSQLiteExt).close_all() # reopen with the artifact # hide
+Base.get_extension(MemoizationKit, :MemoizationKitSQLiteExt).close_all() # reopen with the artifact # hide
 before = computations[]
 result = expensive(2)
 @assert computations[] == before # hide
 println((; result, new_computations = computations[] - before))
 finally # hide
-Base.get_extension(Cached, :CachedSQLiteExt).close_all() # hide
+Base.get_extension(MemoizationKit, :MemoizationKitSQLiteExt).close_all() # hide
 filter!(!=(diskenv), LOAD_PATH) # hide
 end # hide
 nothing # hide
 ```
 
 To ship the artifact, archive, upload, and bind it in your package's `Artifacts.toml`.
-Its package definition can then return `artifact"expensive"` from `Cached.disk_artifact`.
+Its package definition can then return `artifact"expensive"` from `MemoizationKit.disk_artifact`.
 
 A call then looks in RAM, the artifact, and this machine's database, in that order, and only then computes.
 New results go to the database; the artifact is never written, and holds the results of one version of `f`.

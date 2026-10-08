@@ -2,11 +2,11 @@
     @cached function f(args...; kwargs...) ... end
     @cached f(args...; kwargs...) = ...
 
-Memoize a method. The body becomes a method of [`Cached.implementation`](@ref), and `f` keeps
+Memoize a method. The body becomes a method of [`MemoizationKit.implementation`](@ref), and `f` keeps
 its signature (including default values and keyword arguments) but looks up the result in a
 cache selected by [`CacheStyle`](@ref)`(f, args...)`.
 
-The key is chosen by [`Cached.cachekey`](@ref), which defaults to the tuple of positional
+The key is chosen by [`MemoizationKit.cachekey`](@ref), which defaults to the tuple of positional
 arguments, followed by a `NamedTuple` of the keyword arguments if there are any. Custom keys
 can merge calls with different argument types. Shared caches hold all key and value types
 of a function together (one cache per container type). The return type annotation, if
@@ -39,7 +39,7 @@ macro cached(ex)
     def[:args] = args
 
     impl = copy(def)
-    impl[:name] = :($Cached.implementation)
+    impl[:name] = :($MemoizationKit.implementation)
     impl[:args] = [selfarg; map(_nodefault, args)]
     isempty(kwargs) || (impl[:kwargs] = map(_nodefault, kwargs))
 

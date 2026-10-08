@@ -1,14 +1,14 @@
-using Cached: Cached
+using MemoizationKit: MemoizationKit
 using Documenter: Documenter, DocMeta, deploydocs, makedocs
 
-DocMeta.setdocmeta!(Cached, :DocTestSetup, :(using Cached); recursive = true)
+DocMeta.setdocmeta!(MemoizationKit, :DocTestSetup, :(using MemoizationKit); recursive = true)
 
 makedocs(;
-    modules = [Cached],
+    modules = [MemoizationKit],
     authors = "Lukas Devos",
-    sitename = "Cached.jl",
+    sitename = "MemoizationKit.jl",
     format = Documenter.HTML(;
-        canonical = "https://lkdvos.github.io/Cached.jl",
+        canonical = "https://lkdvos.github.io/MemoizationKit.jl",
         edit_link = "main",
         assets = String[],
     ),
@@ -31,4 +31,4 @@ makedocs(;
     ],
 )
 
-deploydocs(; repo = "github.com/lkdvos/Cached.jl", devbranch = "main", push_preview = true)
+deploydocs(; repo = "github.com/lkdvos/MemoizationKit.jl", devbranch = "main", push_preview = true)

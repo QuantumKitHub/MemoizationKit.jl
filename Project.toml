@@ -1,4 +1,4 @@
-name = "Cached"
+name = "MemoizationKit"
 uuid = "1b238080-9255-4fe9-b224-89eb24efe93b"
 version = "0.1.0"
 authors = ["Lukas Devos <ldevos98@gmail.com> and contributors"]
@@ -20,9 +20,9 @@ Tachikoma = "468859d6-42d8-48b7-8ad9-1d312e0e3b0a"
 TimerOutputs = "a759f4b9-e2f1-59dc-863e-4aeb61b1ea8f"
 
 [extensions]
-CachedSQLiteExt = "SQLite"
-CachedTachikomaExt = "Tachikoma"
-CachedTimerOutputsExt = "TimerOutputs"
+MemoizationKitSQLiteExt = "SQLite"
+MemoizationKitTachikomaExt = "Tachikoma"
+MemoizationKitTimerOutputsExt = "TimerOutputs"
 
 [compat]
 ExprTools = "0.1"

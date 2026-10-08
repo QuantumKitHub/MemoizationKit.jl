@@ -1,23 +1,23 @@
 # Default settings, configurable through Preferences.jl (see `docs/src/configuration.md`).
 #
 # Settings are resolved once per function, when its first cache is created:
-#     runtime calls (`set_cache_size!`, ...) > [<Package>.Cached.<function>] > [<Package>.Cached]
-#         > [Cached] > built-in defaults
+#     runtime calls (`set_cache_size!`, ...) > [<Package>.MemoizationKit.<function>] > [<Package>.MemoizationKit]
+#         > [MemoizationKit] > built-in defaults
 # where <Package> is the package that owns the function (`parentmodule(typeof(f))`).
-# The default container is a compile-time preference of Cached only, since it selects the
+# The default container is a compile-time preference of MemoizationKit only, since it selects the
 # `CacheStyle` and so must be a constant.
 
 const BUILTIN_SETTINGS = (; maxsize = 10_000, measure = "count", disk = true, disk_path = "")
 const SETTING_KEYS = map(string, keys(BUILTIN_SETTINGS))
 """
-    Cached.cachesize(x) -> Integer
+    MemoizationKit.cachesize(x) -> Integer
 
 Size in bytes of a cached value `x`, used by caches whose `measure` is `"bytes"`. Defaults to
 `Base.summarysize(x)`. Overload it for your own types when that is slow (it traverses the
 whole object) or inaccurate (memory shared between values is counted for each of them):
 
 ```julia
-Cached.cachesize(t::MyTensor) = sizeof(t.data)
+MemoizationKit.cachesize(t::MyTensor) = sizeof(t.data)
 ```
 """
 cachesize(x) = Base.summarysize(x)
@@ -27,19 +27,19 @@ const MEASURES = Dict{String, Any}("count" => nothing, "bytes" => cachesize)
 const DEFAULT_CONTAINER = let name = @load_preference("container", "ClockCache")
     containers = Dict("ClockCache" => ClockCache, "LRU" => LRU)
     haskey(containers, name) ||
-        error("Cached: invalid preference `container = $(repr(name))`; use \"ClockCache\" or \"LRU\"")
+        error("MemoizationKit: invalid preference `container = $(repr(name))`; use \"ClockCache\" or \"LRU\"")
     containers[name]
 end
 
 # Resolve settings from the preference sections, most general first. `package` is the
-# `[<Package>.Cached]` table (or `nothing`), whose sub-tables are per-function sections.
+# `[<Package>.MemoizationKit]` table (or `nothing`), whose sub-tables are per-function sections.
 function _resolve_settings(fname::AbstractString, cached::AbstractDict, package)
     settings = Dict{String, Any}(string(k) => v for (k, v) in pairs(BUILTIN_SETTINGS))
-    _merge_settings!(settings, cached, "[Cached]")
+    _merge_settings!(settings, cached, "[MemoizationKit]")
     if package isa AbstractDict
-        _merge_settings!(settings, package, "[<package>.Cached]")
+        _merge_settings!(settings, package, "[<package>.MemoizationKit]")
         section = get(package, fname, nothing)
-        section isa AbstractDict && _merge_settings!(settings, section, "[<package>.Cached.$fname]")
+        section isa AbstractDict && _merge_settings!(settings, section, "[<package>.MemoizationKit.$fname]")
     end
     return (;
         maxsize = settings["maxsize"]::Integer,
@@ -53,9 +53,9 @@ function _merge_settings!(settings, section::AbstractDict, where)
     for (k, v) in section
         v isa AbstractDict && continue # per-function section
         if !(k in SETTING_KEYS)
-            @warn "Cached: ignoring unknown preference `$k` in $where"
+            @warn "MemoizationKit: ignoring unknown preference `$k` in $where"
         elseif !_isvalid(k, v)
-            @warn "Cached: ignoring invalid preference `$k = $(repr(v))` in $where"
+            @warn "MemoizationKit: ignoring invalid preference `$k = $(repr(v))` in $where"
         else
             settings[k] = v
         end
@@ -77,7 +77,7 @@ _ispackage(mod::Module) = Base.PkgId(mod).uuid !== nothing # not e.g. Main
 
 function _package_section(f)
     mod = _owner(f)
-    return _ispackage(mod) ? load_preference(mod, "Cached", nothing) : nothing
+    return _ispackage(mod) ? load_preference(mod, "MemoizationKit", nothing) : nothing
 end
 
 _fname(f) = string(f isa Function ? nameof(f) : nameof(typeof(f)))
@@ -96,13 +96,13 @@ _functioncaches!(f) = get!(() -> FunctionCaches(f), REGISTRY.functions, f)
     set_cache_preferences!(package::Module; settings...)
     set_cache_preferences!(f; settings...)
 
-Store default cache settings in `LocalPreferences.toml`: globally (section `[Cached]`), for the
-functions of `package` (`[<package>.Cached]`), or for the function `f` (`[<owner>.Cached.<f>]`,
+Store default cache settings in `LocalPreferences.toml`: globally (section `[MemoizationKit]`), for the
+functions of `package` (`[<package>.MemoizationKit]`), or for the function `f` (`[<owner>.MemoizationKit.<f>]`,
 where `<owner>` is the package that defines `f`). Settings are `maxsize`, `measure`
 (`"count"` or `"bytes"`), `disk` and `disk_path` (see the disk caching docs), and, globally only, `container` (`"ClockCache"` or `"LRU"`). A value of `nothing` removes the setting.
 
 Settings apply to functions whose first cache is created afterwards, so in practice after a
-restart; changing `container` recompiles Cached. See the configuration docs for how settings
+restart; changing `container` recompiles MemoizationKit. See the configuration docs for how settings
 combine.
 
 ```julia
@@ -152,12 +152,12 @@ end
 
 _apply!(section, settings) = foreach(((k, v),) -> v === nothing ? delete!(section, string(k)) : (section[string(k)] = v), settings)
 
-# Read-modify-write the `[<mod>.Cached]` table. It is deleted first, since `set_preferences!`
+# Read-modify-write the `[<mod>.MemoizationKit]` table. It is deleted first, since `set_preferences!`
 # merges tables and would otherwise keep removed keys.
 function _update_section!(update!, mod::Module)
-    section = deepcopy(load_preference(mod, "Cached", Dict{String, Any}()))
+    section = deepcopy(load_preference(mod, "MemoizationKit", Dict{String, Any}()))
     update!(section)
-    delete_preferences!(mod, "Cached"; force = true)
-    isempty(section) || set_preferences!(mod, "Cached" => section; force = true)
+    delete_preferences!(mod, "MemoizationKit"; force = true)
+    isempty(section) || set_preferences!(mod, "MemoizationKit" => section; force = true)
     return nothing
 end

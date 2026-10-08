@@ -1,11 +1,11 @@
 # Eviction policies
 
 ```@meta
-CurrentModule = Cached
+CurrentModule = MemoizationKit
 ```
 
 When a RAM cache reaches its size limit, it removes entries to make room for new results.
-Cached provides two policies: Clock (the default) and least recently used (LRU).
+MemoizationKit provides two policies: Clock (the default) and least recently used (LRU).
 Both work with shared and task-local caches, and with limits in entries or measured value size.
 
 ## Clock: second chances
@@ -19,7 +19,7 @@ New entries start with a clear bit: they get a second chance only after a cache 
 For example, fill a three-entry cache with A, B, and C, then hit A.
 Inserting D starts the hand at A, clears A's bit, and evicts B, whose bit is clear.
 ```@example clockcache
-using Cached
+using MemoizationKit
 
 cache = ClockCache{Symbol, Int}(; maxsize = 3)
 for (key, value) in zip((:A, :B, :C), 1:3)
@@ -45,7 +45,7 @@ When space is needed, the least recently used entry is removed.
 For example, fill a three-entry cache with A, B, and C, then hit A.
 The order from least to most recently used becomes B, C, A, so inserting D evicts B.
 ```@example lru
-using Cached
+using MemoizationKit
 
 cache = LRU{Symbol, Int}(; maxsize = 3)
 for (key, value) in zip((:A, :B, :C), 1:3)
@@ -65,12 +65,12 @@ Neither policy guarantees a better hit rate for every workload; use the [dashboa
 ## Selecting a policy
 
 ```@example policy
-using Cached
+using MemoizationKit
 @cached expensive(x) = x^2
 @cached other(x) = 2x
 
-Cached.CacheStyle(::typeof(expensive), args...) = GlobalCache{LRU}()
-Cached.CacheStyle(::typeof(other), args...) = TaskLocalCache{ClockCache}()
+MemoizationKit.CacheStyle(::typeof(expensive), args...) = GlobalCache{LRU}()
+MemoizationKit.CacheStyle(::typeof(other), args...) = TaskLocalCache{ClockCache}()
 
 (CacheStyle(expensive, 3), CacheStyle(other, 3))
 ```

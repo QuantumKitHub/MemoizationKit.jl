@@ -1,14 +1,14 @@
 # Dashboard
 
 ```@meta
-CurrentModule = Cached
+CurrentModule = MemoizationKit
 ```
 
 [`cache_dashboard`](@ref) opens a terminal dashboard of the global caches, to browse them, watch their hit rates live, and empty or resize them while your program runs.
 It is a package extension on [Tachikoma.jl](https://github.com/kahliburke/Tachikoma.jl), so load Tachikoma first:
 
 ```julia
-using Cached, Tachikoma
+using MemoizationKit, Tachikoma
 cache_dashboard()                                # refreshes every second
 cache_dashboard(; interval = 0.2, filter = "fs") # faster, only functions whose name contains "fs"
 ```
@@ -36,25 +36,25 @@ Statistics are copied under brief locks, so the dashboard can run while other ta
 With a few example caches, the RAM tab looks like this (rendered while building these docs):
 
 ```@example dashboard
-using Cached, Tachikoma, SQLite # hide
+using MemoizationKit, Tachikoma, SQLite # hide
 env = mktempdir() # the disk caches go to a temporary directory # hide
-write(joinpath(env, "Project.toml"), "[deps]\nCached = \"$(Base.PkgId(Cached).uuid)\"\n") # hide
-write(joinpath(env, "LocalPreferences.toml"), "[Cached]\ndisk_path = $(repr(mktempdir()))\n") # hide
+write(joinpath(env, "Project.toml"), "[deps]\nMemoizationKit = \"$(Base.PkgId(MemoizationKit).uuid)\"\n") # hide
+write(joinpath(env, "LocalPreferences.toml"), "[MemoizationKit]\ndisk_path = $(repr(mktempdir()))\n") # hide
 push!(LOAD_PATH, env) # hide
-Core.eval(Main, :(using Cached)) # hide
+Core.eval(Main, :(using MemoizationKit)) # hide
 Core.eval(Main, quote # hide
     @cached fib(n::Int)::BigInt = n < 2 ? BigInt(n) : fib(n - 1) + fib(n - 2) # hide
     @cached weights(a, b, c) = a + b * c # hide
     @cached matrix(n::Int)::Matrix{Float64} = zeros(n, n) # hide
     @cached label(s::Symbol; upper::Bool = false)::String = upper ? uppercase(string(s)) : string(s) # hide
     @cached kernel(j::Int)::Matrix{Float64} = ones(j, j) # hide
-    Cached.CacheStyle(::typeof(fib), ::Int) = GlobalLRUCache() # hide
-    Cached.DiskCacheStyle(::typeof(fib), ::Int) = DiskCache() # hide
-    Cached.CacheStyle(::typeof(kernel), ::Int) = NoCache() # hide
-    Cached.DiskCacheStyle(::typeof(kernel), ::Int) = DiskCache() # hide
-    set_cache_size!(matrix, 2^20; by = Cached.cachesize) # hide
+    MemoizationKit.CacheStyle(::typeof(fib), ::Int) = GlobalLRUCache() # hide
+    MemoizationKit.DiskCacheStyle(::typeof(fib), ::Int) = DiskCache() # hide
+    MemoizationKit.CacheStyle(::typeof(kernel), ::Int) = NoCache() # hide
+    MemoizationKit.DiskCacheStyle(::typeof(kernel), ::Int) = DiskCache() # hide
+    set_cache_size!(matrix, 2^20; by = MemoizationKit.cachesize) # hide
 end) # hide
-const Ext = Base.get_extension(Cached, :CachedTachikomaExt) # hide
+const Ext = Base.get_extension(MemoizationKit, :MemoizationKitTachikomaExt) # hide
 m = Ext.Dashboard(; interval = Inf) # hide
 for step in 1:40 # hide
     for i in 1:(20 + (37step) % 60) # hide
@@ -96,7 +96,7 @@ The Disk tab lists the disk caches opened in this process, including functions w
 m.tab = 2 # hide
 wait(Ext.read_disk!(m).disktask) # the entries and sizes on disk # hide
 preview(m, 8) # hide
-Base.get_extension(Cached, :CachedSQLiteExt).close_all() # hide
+Base.get_extension(MemoizationKit, :MemoizationKitSQLiteExt).close_all() # hide
 filter!(!=(env), LOAD_PATH) # hide
 nothing # hide
 ```

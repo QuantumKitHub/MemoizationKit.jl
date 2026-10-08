@@ -1,9 +1,9 @@
 [deps]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
-Cached = "1b238080-9255-4fe9-b224-89eb24efe93b"
+MemoizationKit = "1b238080-9255-4fe9-b224-89eb24efe93b"
 LRUCache = "8ac3fa9e-de4c-5943-b1dc-09c6b5f20637"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 
 [sources]
-Cached = {path = ".."}
+MemoizationKit = {path = ".."}

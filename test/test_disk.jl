@@ -1,13 +1,13 @@
 using Test
-using Cached
+using MemoizationKit
 using Preferences
 using Serialization
 using Serialization: AbstractSerializer
 using SQLite: SQLite, DBInterface
 
-include(joinpath(pkgdir(Cached), "benchmark", "disk_stress.jl")) # `stress`, `use_disk_path`
+include(joinpath(pkgdir(MemoizationKit), "benchmark", "disk_stress.jl")) # `stress`, `use_disk_path`
 
-const EXT = Base.get_extension(Cached, :CachedSQLiteExt)
+const EXT = Base.get_extension(MemoizationKit, :MemoizationKitSQLiteExt)
 const DIR = mktempdir() # the disk caches of this file
 const DIR_ENV = use_disk_path(DIR)
 
@@ -24,12 +24,12 @@ function run_julia(code)
 end
 
 @cached square(x::Int) = (CALLS[] += 1; [x, x^2])
-Cached.DiskCacheStyle(::typeof(square), ::Int) = DiskCache()
+MemoizationKit.DiskCacheStyle(::typeof(square), ::Int) = DiskCache()
 plainsquare(x) = square(x)
 
 @testset "RAM, then disk, then compute" begin
-    @test Cached.DiskCacheStyle(square, 1) === DiskCache() === DiskCache{Serializer}()
-    @test Cached.DiskCacheStyle(sum, 1) === NoCache()
+    @test MemoizationKit.DiskCacheStyle(square, 1) === DiskCache() === DiskCache{Serializer}()
+    @test MemoizationKit.DiskCacheStyle(sum, 1) === NoCache()
     @test ram_and_count(() -> square(3)) == ([3, 9], 1) # computed, written to disk
     @test square(3) == [3, 9] && CALLS[] == 1 # RAM hit
     @test ram_and_count(() -> square(3)) == ([3, 9], 0) # disk hit
@@ -37,19 +37,19 @@ plainsquare(x) = square(x)
     @test allocs(plainsquare, 3) == 0 # the RAM hit path is unchanged
     info = only(disk_cache_info(square))
     @test info.first === square && info.second.entries == 1 && info.second.bytes > 0
-    @test Dict(Cached.disk_cache_stats())[square] == (; hits = 1, misses = 1) # lookups on disk
+    @test Dict(MemoizationKit.disk_cache_stats())[square] == (; hits = 1, misses = 1) # lookups on disk
     @test endswith(EXT.storename(square), ".square-v1") # `<Module>.square-v1`
     @test path(square) == joinpath(DIR, EXT.storename(square) * "-$(EXT._sanitize(gethostname())).sqlite")
 end
 
 @cached canonical(x) = (CALLS[] += 1; length(x))
-Cached.cachekey(::typeof(canonical), x) = length(x)
-Cached.DiskCacheStyle(::typeof(canonical), x) = DiskCache()
+MemoizationKit.cachekey(::typeof(canonical), x) = length(x)
+MemoizationKit.DiskCacheStyle(::typeof(canonical), x) = DiskCache()
 
 @cached wrapped(x) = (CALLS[] += 1; length(x))
-Cached.cachekey(::typeof(wrapped), x) =
+MemoizationKit.cachekey(::typeof(wrapped), x) =
     Hashed(x, (x, seed) -> hash(length(x), seed), (x, y) -> isequal(length(x), length(y)))
-Cached.DiskCacheStyle(::typeof(wrapped), x) = DiskCache()
+MemoizationKit.DiskCacheStyle(::typeof(wrapped), x) = DiskCache()
 
 @testset "custom keys" begin
     @test ram_and_count(() -> canonical([1, 2])) == (2, 1)
@@ -64,8 +64,8 @@ Cached.DiskCacheStyle(::typeof(wrapped), x) = DiskCache()
 end
 
 @cached ondisk(x::Int)::Vector{Int} = (CALLS[] += 1; [x])
-Cached.CacheStyle(::typeof(ondisk), ::Int) = NoCache()
-Cached.DiskCacheStyle(::typeof(ondisk), ::Int) = DiskCache()
+MemoizationKit.CacheStyle(::typeof(ondisk), ::Int) = NoCache()
+MemoizationKit.DiskCacheStyle(::typeof(ondisk), ::Int) = DiskCache()
 
 @testset "NoCache in RAM: every call goes to disk" begin
     n = CALLS[]
@@ -80,7 +80,7 @@ struct Scale
     a::Int
 end
 @cached (s::Scale)(x::Int) = (CALLS[] += 1; s.a * x)
-Cached.DiskCacheStyle(::Scale, ::Int) = DiskCache()
+MemoizationKit.DiskCacheStyle(::Scale, ::Int) = DiskCache()
 
 @testset "callable objects are part of the key" begin
     @test ram_and_count(() -> (Scale(2)(3), Scale(3)(3))) == ((6, 9), 2)
@@ -112,10 +112,10 @@ function Serialization.deserialize(s::PointSerializer, ::Type{Point})
 end
 
 @cached point(x::Int) = (CALLS[] += 1; Point(x, 2x))
-Cached.DiskCacheStyle(::typeof(point), ::Int) = DiskCache(; serializer = PointSerializer)
+MemoizationKit.DiskCacheStyle(::typeof(point), ::Int) = DiskCache(; serializer = PointSerializer)
 
 @testset "custom serializer" begin
-    @test Cached.DiskCacheStyle(point, 1) === DiskCache{PointSerializer}()
+    @test MemoizationKit.DiskCacheStyle(point, 1) === DiskCache{PointSerializer}()
     @test_throws ArgumentError DiskCache{Int}()
     @test ram_and_count(() -> point(4)) == (Point(4, 8), 1)
     @test ram_and_count(() -> point(4)) == (Point(4, 8), 0)
@@ -127,8 +127,8 @@ end
 
 const VERSION_TAG = Ref("1")
 @cached versioned(x::Int) = (CALLS[] += 1; x)
-Cached.DiskCacheStyle(::typeof(versioned), ::Int) = DiskCache()
-Cached.diskversion(::typeof(versioned)) = VERSION_TAG[]
+MemoizationKit.DiskCacheStyle(::typeof(versioned), ::Int) = DiskCache()
+MemoizationKit.diskversion(::typeof(versioned)) = VERSION_TAG[]
 
 @testset "a new version invalidates" begin
     @test ram_and_count(() -> versioned(1)) == (1, 1)
@@ -144,7 +144,7 @@ Cached.diskversion(::typeof(versioned)) = VERSION_TAG[]
 end
 
 @cached fragile(x::Int)::Vector{Int} = (CALLS[] += 1; [x])
-Cached.DiskCacheStyle(::typeof(fragile), ::Int) = DiskCache()
+MemoizationKit.DiskCacheStyle(::typeof(fragile), ::Int) = DiskCache()
 
 @testset "unreadable entries are recomputed and overwritten" begin
     @test ram_and_count(() -> fragile(1)) == ([1], 1)
@@ -166,7 +166,7 @@ Cached.DiskCacheStyle(::typeof(fragile), ::Int) = DiskCache()
 end
 
 @cached switched(x::Int) = (CALLS[] += 1; x)
-Cached.DiskCacheStyle(::typeof(switched), ::Int) = DiskCache()
+MemoizationKit.DiskCacheStyle(::typeof(switched), ::Int) = DiskCache()
 
 @testset "turning disk caches off" begin
     disable_disk_caches!()
@@ -184,17 +184,17 @@ end
 @cached prefoff(x::Int) = (CALLS[] += 1; x)
 @cached prefpath(x::Int) = x
 @cached unwritable(x::Int) = (CALLS[] += 1; x)
-Cached.DiskCacheStyle(::Union{typeof(prefoff), typeof(prefpath), typeof(unwritable)}, ::Int) = DiskCache()
+MemoizationKit.DiskCacheStyle(::Union{typeof(prefoff), typeof(prefpath), typeof(unwritable)}, ::Int) = DiskCache()
 
 @testset "preferences, and disk errors" begin
     package = Dict{String, Any}("disk_path" => "/x", "f" => Dict{String, Any}("disk" => false))
-    @test Cached._resolve_settings("f", Dict{String, Any}("disk" => true), package)[(:disk, :disk_path)] == (; disk = false, disk_path = "/x")
-    @test (@test_logs (:warn, r"invalid preference `disk = 1`") Cached._resolve_settings("f", Dict{String, Any}("disk" => 1), nothing)).disk
+    @test MemoizationKit._resolve_settings("f", Dict{String, Any}("disk" => true), package)[(:disk, :disk_path)] == (; disk = false, disk_path = "/x")
+    @test (@test_logs (:warn, r"invalid preference `disk = 1`") MemoizationKit._resolve_settings("f", Dict{String, Any}("disk" => 1), nothing)).disk
     @test_throws ArgumentError set_cache_preferences!(; disk = 1)
 
     # in a private project, as in `test_preferences.jl`; it comes before `DIR` on the load path
     env = mktempdir()
-    write(joinpath(env, "Project.toml"), "[deps]\nCached = \"1b238080-9255-4fe9-b224-89eb24efe93b\"\n")
+    write(joinpath(env, "Project.toml"), "[deps]\nMemoizationKit = \"1b238080-9255-4fe9-b224-89eb24efe93b\"\n")
     old = Base.ACTIVE_PROJECT[]
     Base.ACTIVE_PROJECT[] = joinpath(env, "Project.toml")
     other = mktempdir()
@@ -221,18 +221,18 @@ end
 
 @testset "default directory" begin
     scratch = mktempdir()
-    Cached.Scratch.with_scratch_directory(scratch) do
-        @test EXT.diskdir(prefpath, "") == joinpath(scratch, string(Base.PkgId(Cached).uuid), "Main")
+    MemoizationKit.Scratch.with_scratch_directory(scratch) do
+        @test EXT.diskdir(prefpath, "") == joinpath(scratch, string(Base.PkgId(MemoizationKit).uuid), "Main")
         # packages get their own scratch space
-        @test EXT.diskdir(Preferences.load_preference, "") == joinpath(scratch, string(Base.PkgId(Preferences).uuid), "Cached")
+        @test EXT.diskdir(Preferences.load_preference, "") == joinpath(scratch, string(Base.PkgId(Preferences).uuid), "MemoizationKit")
     end
 end
 
 module Owned
-    using Cached
+    using MemoizationKit
     @cached a(x::Int) = x
     @cached b(x::Int) = -x
-    Cached.DiskCacheStyle(::Union{typeof(a), typeof(b)}, ::Int) = DiskCache()
+    MemoizationKit.DiskCacheStyle(::Union{typeof(a), typeof(b)}, ::Int) = DiskCache()
 end
 
 @testset "management per module" begin
@@ -246,8 +246,8 @@ end
 
 const ARTIFACT = Ref{Union{Nothing, String}}(nothing)
 @cached shipped(x::Int) = (CALLS[] += 1; x + 0.5)
-Cached.DiskCacheStyle(::typeof(shipped), ::Int) = DiskCache()
-Cached.disk_artifact(::typeof(shipped)) = ARTIFACT[]
+MemoizationKit.DiskCacheStyle(::typeof(shipped), ::Int) = DiskCache()
+MemoizationKit.disk_artifact(::typeof(shipped)) = ARTIFACT[]
 
 @testset "export to a read-only artifact" begin
     @test ram_and_count(() -> (shipped(1), shipped(2))) == ((1.5, 2.5), 2)
@@ -271,11 +271,11 @@ Cached.disk_artifact(::typeof(shipped)) = ARTIFACT[]
 end
 
 module Timed
-    using Cached
+    using MemoizationKit
     const LOG = Symbol[]
     @cached f(x::Int) = x
-    Cached.DiskCacheStyle(::typeof(f), ::Int) = DiskCache()
-    function Cached.instrument(f, ::Val{phase}, thunk, ::Val{fullname(@__MODULE__)}) where {phase}
+    MemoizationKit.DiskCacheStyle(::typeof(f), ::Int) = DiskCache()
+    function MemoizationKit.instrument(f, ::Val{phase}, thunk, ::Val{fullname(@__MODULE__)}) where {phase}
         push!(LOG, phase)
         return thunk()
     end
@@ -291,12 +291,12 @@ end
 @testset "round trip through a fresh process" begin
     dir = mktempdir()
     code = """
-    using Cached, SQLite
-    include($(repr(joinpath(pkgdir(Cached), "benchmark", "disk_stress.jl"))))
+    using MemoizationKit, SQLite
+    include($(repr(joinpath(pkgdir(MemoizationKit), "benchmark", "disk_stress.jl"))))
     use_disk_path($(repr(dir)))
     const calls = Ref(0)
     @cached roundtrip(x::Int; scale = 1) = (calls[] += 1; (scale * x, string(x)))
-    Cached.DiskCacheStyle(::typeof(roundtrip), ::Int) = DiskCache()
+    MemoizationKit.DiskCacheStyle(::typeof(roundtrip), ::Int) = DiskCache()
     print(roundtrip(1), roundtrip(2; scale = 3), " calls=", calls[])
     """
     @test run_julia(code) == "(1, \"1\")(6, \"2\") calls=2"
@@ -307,9 +307,9 @@ end
 
 @testset "error hint without SQLite" begin
     code = """
-    using Cached
+    using MemoizationKit
     @cached nosqlite(x::Int) = x
-    Cached.DiskCacheStyle(::typeof(nosqlite), ::Int) = DiskCache()
+    MemoizationKit.DiskCacheStyle(::typeof(nosqlite), ::Int) = DiskCache()
     try
         nosqlite(1)
     catch e

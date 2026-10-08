@@ -1,6 +1,6 @@
-module CachedTachikomaExt
+module MemoizationKitTachikomaExt
 
-# Terminal dashboard of the global caches, see `Cached.cache_dashboard`.
+# Terminal dashboard of the global caches, see `MemoizationKit.cache_dashboard`.
 #
 # Two tabs: the caches in RAM, and the disk caches (SQLite extension). The model keeps its own
 # copy of the statistics, re-read from `cache_info`, `cache_stats` and `disk_cache_stats` (which
@@ -9,7 +9,7 @@ module CachedTachikomaExt
 # caches on a background task while the Disk tab is shown. Actions (empty, resize) call the
 # locked public API and refresh immediately; they act on RAM only.
 
-using Cached: Cached, AbstractCache, cache_info, cache_stats, set_cache_size!
+using MemoizationKit: MemoizationKit, AbstractCache, cache_info, cache_stats, set_cache_size!
 using Tachikoma: Tachikoma, Model, Frame, KeyEvent, Rect, Layout, Vertical, Fixed, Fill,
     split_layout, render, set_string!, set_char!, tstyle, center, right, Block, StatusBar, Span,
     Sparkline, Gauge, Paragraph, TextInput, TabBar, handle_key!, text, app
@@ -106,7 +106,7 @@ end
 
 Tachikoma.should_quit(m::Dashboard) = m.quit
 
-function Cached.cache_dashboard(; interval::Real = 1.0, filter::AbstractString = "")
+function MemoizationKit.cache_dashboard(; interval::Real = 1.0, filter::AbstractString = "")
     m = Dashboard(; interval, filter)
     refresh!(m)
     app(m; fps = 20)
@@ -127,7 +127,7 @@ function refresh!(m::Dashboard, now = time())
     m.tabs[1].rows = map(cache_info()) do (f, c)
         st = cache_stats(c)
         s = STATS(st[fieldnames(STATS)])
-        kind = (c isa Cached.ClockCache ? "Clock" : string(nameof(typeof(c)))) * (any(d -> first(d) === f, disk) ? "+disk" : "")
+        kind = (c isa MemoizationKit.ClockCache ? "Clock" : string(nameof(typeof(c)))) * (any(d -> first(d) === f, disk) ? "+disk" : "")
         Row(f, c, repr(f), kind, st.by !== nothing, s, trend!(trends, m.trends, c, s, elapsed))
     end
     m.tabs[2].rows = map(disk) do (f, d)
@@ -139,8 +139,8 @@ function refresh!(m::Dashboard, now = time())
 end
 
 # Without the SQLite extension there are no disk caches.
-hassqlite() = applicable(Cached.disk_cache_stats)
-disk_stats() = hassqlite() ? Cached.disk_cache_stats() : Pair{Any, @NamedTuple{hits::Int, misses::Int}}[]
+hassqlite() = applicable(MemoizationKit.disk_cache_stats)
+disk_stats() = hassqlite() ? MemoizationKit.disk_cache_stats() : Pair{Any, @NamedTuple{hits::Int, misses::Int}}[]
 
 function trend!(trends, old, c, s, elapsed)
     t = get(old, c, nothing)
@@ -194,7 +194,7 @@ end
 
 function read_diskinfo(f)
     return try
-        info = Cached.disk_cache_info(f)
+        info = MemoizationKit.disk_cache_info(f)
         isempty(info) ? nothing : last(first(info))
     catch
         nothing
@@ -274,7 +274,7 @@ end
 # The limit is set for the function, so that it persists, in its current measure
 # (`set_cache_size!` would discard the cache if `by` changed).
 function resize_row!(m::Dashboard, r::Row, n::Int)
-    set_cache_size!(r.f, n; by = Cached.cache_stats(r.cache).by)
+    set_cache_size!(r.f, n; by = MemoizationKit.cache_stats(r.cache).by)
     m.message = "set the limit of $(r.label) to $(_short(n, r.bytes))"
     return refresh!(m)
 end
@@ -339,7 +339,7 @@ function totals(m::Dashboard)
     stored = any(ismissing, infos) ? "… entries · …" :
         "$(sum(i -> i.entries, known; init = 0)) entries · $(_short(sum(i -> i.bytes, known; init = 0), true))"
     hits, misses = sum(r -> r.stats.hits, rows; init = 0), sum(r -> r.stats.misses, rows; init = 0)
-    off = Cached.DISK_ENABLED[] ? "" : " · disk caches off"
+    off = MemoizationKit.DISK_ENABLED[] ? "" : " · disk caches off"
     return "$(length(rows)) disk caches · $stored · $hits hits · $misses misses ($(_percent(hitrate((; hits, misses)))))$off$filt"
 end
 
@@ -466,4 +466,4 @@ function _short(n::Integer, bytes::Bool)
     return string(i == 1 || x >= 10 ? round(Int, x) : round(x; digits = 1), units[i])
 end
 
-end # module CachedTachikomaExt
+end # module MemoizationKitTachikomaExt

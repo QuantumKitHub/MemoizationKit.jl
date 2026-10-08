@@ -37,7 +37,7 @@ _empty!(caches) = (foreach(empty! ∘ last, caches); nothing)
 Set the size limit of the global cache of `f`, overriding the preferences (see the
 configuration docs). The limit applies to the function as a whole, all signatures together.
 Without `by`, `maxsize` counts entries; otherwise it bounds the sum of `by(value)` over the
-entries, e.g. with `by = Cached.cachesize` for bytes. Changing `by` discards the cache of `f`.
+entries, e.g. with `by = MemoizationKit.cachesize` for bytes. Changing `by` discards the cache of `f`.
 """
 function set_cache_size!(f, maxsize::Integer; by = nothing)
     maxsize >= 0 || throw(ArgumentError("maxsize must be non-negative"))
@@ -74,7 +74,7 @@ function cache_dashboard end
 
 Record the time spent in the cached functions owned by the package `M`, or any of its
 submodules, in `timer`: a section per function and phase, the lookup (hit or miss) with the
-computation of a miss nested in it, labelled by [`Cached.instrument_label`](@ref). This
+computation of a miss nested in it, labelled by [`MemoizationKit.instrument_label`](@ref). This
 includes methods of these functions cached in other packages. Modules outside packages, such
 as those defined in the REPL, count separately. Enabling `M` again replaces its timer;
 [`disable_cache_timers!`](@ref) stops.
@@ -98,14 +98,14 @@ function disable_cache_timers! end
 
 # Functions whose methods come from a package extension, with the package to load.
 const EXTENSIONS = (
-    cache_dashboard => (:CachedTachikomaExt, "Tachikoma"),
-    enable_cache_timers! => (:CachedTimerOutputsExt, "TimerOutputs"),
-    disable_cache_timers! => (:CachedTimerOutputsExt, "TimerOutputs"),
-    disk_lookup => (:CachedSQLiteExt, "SQLite"),
-    disk_cache_info => (:CachedSQLiteExt, "SQLite"),
-    disk_cache_stats => (:CachedSQLiteExt, "SQLite"),
-    empty_disk_caches! => (:CachedSQLiteExt, "SQLite"),
-    export_disk_cache => (:CachedSQLiteExt, "SQLite"),
+    cache_dashboard => (:MemoizationKitTachikomaExt, "Tachikoma"),
+    enable_cache_timers! => (:MemoizationKitTimerOutputsExt, "TimerOutputs"),
+    disable_cache_timers! => (:MemoizationKitTimerOutputsExt, "TimerOutputs"),
+    disk_lookup => (:MemoizationKitSQLiteExt, "SQLite"),
+    disk_cache_info => (:MemoizationKitSQLiteExt, "SQLite"),
+    disk_cache_stats => (:MemoizationKitSQLiteExt, "SQLite"),
+    empty_disk_caches! => (:MemoizationKitSQLiteExt, "SQLite"),
+    export_disk_cache => (:MemoizationKitSQLiteExt, "SQLite"),
 )
 
 # Without the extension these functions have no methods; say how to get them. Calls with

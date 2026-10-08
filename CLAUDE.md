@@ -2,7 +2,7 @@
 
 ## Layout
 
-This repository uses sibling worktrees with the bare Git repository at `../Cached.jl`.
+This repository uses sibling worktrees with a shared bare Git repository in the parent directory.
 Create additional worktrees beside the current checkout, never inside it.
 
 - `src/`: memoization macro, strategy dispatch, cache containers, registry, and configuration.
@@ -37,11 +37,11 @@ Keep Markdown prose to one sentence per line.
 
 ## Implementation constraints
 
-- `@cached` preserves the method signature and moves the body to `Cached.implementation`.
+- `@cached` preserves the method signature and moves the body to `MemoizationKit.implementation`.
 - The default global cache shares one size limit across a function's cached methods, with a separate cache per container type.
 - Preserve inferred return types and allocation-free RAM hits for concrete keys with the built-in containers.
 - Built-in RAM containers distinguish key types and use `hash` and `isequal`.
-- `Cached.cachekey` may merge equivalent inputs; merged calls must accept the same result and return type.
+- `MemoizationKit.cachekey` may merge equivalent inputs; merged calls must accept the same result and return type.
 - Compute misses outside cache locks so recursion works; concurrent misses may compute twice.
 - Keep the call path safe for precompiled packages, without runtime method definitions.
 - Disk lookup order is RAM, read-only artifact, local database, then computation.

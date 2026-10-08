@@ -1,4 +1,4 @@
-module Cached
+module MemoizationKit
 
 export @cached, uncached
 export CacheStyle, NoCache, GlobalCache, GlobalLRUCache, TaskLocalCache
@@ -9,7 +9,7 @@ export cache_dashboard, enable_cache_timers!, disable_cache_timers!
 export DiskCacheStyle, DiskCache, disk_cache_info, empty_disk_caches!, export_disk_cache
 export disable_disk_caches!, enable_disk_caches!
 
-# documented API that is used qualified, e.g. by overloading `Cached.cachesize`
+# documented API that is used qualified, e.g. by overloading `MemoizationKit.cachesize`
 @static if VERSION >= v"1.11.0-DEV.469"
     eval(Meta.parse("public AbstractCache, cache_stats, disk_cache_stats, cachesize, implementation, instrument_label, diskversion, disk_artifact, cachekey"))
 end
@@ -44,4 +44,4 @@ function __init__()
     return nothing
 end
 
-end # module Cached
+end # module MemoizationKit

@@ -6,12 +6,12 @@
 # The value computation is trivial, so the numbers measure cache overhead only.
 
 using BenchmarkTools, Random, Printf
-using Cached: Cached
+using MemoizationKit: MemoizationKit
 using LRUCache: LRUCache
 
 const CONTAINERS = [
-    "Cached.LRU" => (K, V, n) -> Cached.LRU{K, V}(; maxsize = n),
-    "Cached.ClockCache" => (K, V, n) -> Cached.ClockCache{K, V}(; maxsize = n),
+    "MemoizationKit.LRU" => (K, V, n) -> MemoizationKit.LRU{K, V}(; maxsize = n),
+    "MemoizationKit.ClockCache" => (K, V, n) -> MemoizationKit.ClockCache{K, V}(; maxsize = n),
     "LRUCache.LRU" => (K, V, n) -> LRUCache.LRU{K, V}(; maxsize = n),
 ]
 
@@ -31,7 +31,7 @@ function run!(c, seq)
 end
 
 hitrate(c::LRUCache.LRU) = (i = LRUCache.cache_info(c); i.hits / (i.hits + i.misses))
-hitrate(c) = (s = Cached.cache_stats(c); s.hits / (s.hits + s.misses))
+hitrate(c) = (s = MemoizationKit.cache_stats(c); s.hits / (s.hits + s.misses))
 
 function threaded!(c, seq, ntasks)
     chunks = Iterators.partition(seq, cld(length(seq), ntasks))

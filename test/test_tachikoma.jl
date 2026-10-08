@@ -1,14 +1,14 @@
 using Test
-using Cached
+using MemoizationKit
 
 @testset "error hint without Tachikoma" begin
-    # a fresh process with Cached only, since this one loads Tachikoma
+    # a fresh process with MemoizationKit only, since this one loads Tachikoma
     mktempdir() do env
         code = """
         using Pkg
         Pkg.activate($(repr(env)); io = devnull)
-        Pkg.develop(path = $(repr(pkgdir(Cached))); io = devnull)
-        using Cached
+        Pkg.develop(path = $(repr(pkgdir(MemoizationKit))); io = devnull)
+        using MemoizationKit
         for call in (() -> cache_dashboard(), () -> cache_dashboard(; interval = 2))
             try
                 call()
@@ -29,10 +29,10 @@ end
 
 using Tachikoma: Tachikoma, TestBackend, KeyEvent, Rect, Frame, GraphicsRegion, PixelSnapshot, find_text, row_text
 
-const Ext = Base.get_extension(Cached, :CachedTachikomaExt)
+const Ext = Base.get_extension(MemoizationKit, :MemoizationKitTachikomaExt)
 
 @testset "no hint with Tachikoma loaded" begin
-    @test hasmethod(Cached.cache_dashboard, Tuple{})
+    @test hasmethod(MemoizationKit.cache_dashboard, Tuple{})
     e = try
         cache_dashboard(1)
     catch e
@@ -46,9 +46,9 @@ end
 @cached dash_bytes(n::Int)::Vector{Float64} = zeros(n)
 @cached dash_late(x) = x
 @cached dash_lru(x) = x
-Cached.CacheStyle(::typeof(dash_lru), x) = GlobalLRUCache()
+MemoizationKit.CacheStyle(::typeof(dash_lru), x) = GlobalLRUCache()
 @cached dash_two(x) = x # one cache per container type
-Cached.CacheStyle(::typeof(dash_two), ::Int) = GlobalLRUCache()
+MemoizationKit.CacheStyle(::typeof(dash_two), ::Int) = GlobalLRUCache()
 
 function draw(m; width = 120, height = 24)
     tb = TestBackend(width, height)
@@ -69,7 +69,7 @@ function dashboard(filter)
 end
 
 foreach(dash_square, (1, 2, 3, 1, 2, 1.0))
-set_cache_size!(dash_bytes, 10^6; by = Cached.cachesize)
+set_cache_size!(dash_bytes, 10^6; by = MemoizationKit.cachesize)
 dash_bytes(10);
 dash_bytes(10);
 dash_lru(1)
@@ -189,7 +189,7 @@ end
     @test isempty(c)
     @test occursin("dash_square", line(draw(m), "emptied"))
 
-    old = Cached.cache_stats(c).maxsize
+    old = MemoizationKit.cache_stats(c).maxsize
     press(m, :enter)
     @test m.pending == old
     press(m, :right, :right, :left)
@@ -198,22 +198,22 @@ end
     press(m, ']')
     @test m.pending == 2old + round(Int, 2old / 10)
     press(m, :escape)
-    @test m.pending === nothing && Cached.cache_stats(c).maxsize == old && !m.quit
+    @test m.pending === nothing && MemoizationKit.cache_stats(c).maxsize == old && !m.quit
     press(m, :enter, :left, '[', :enter)
     n = old ÷ 2 - round(Int, (old ÷ 2) / 10)
-    @test Cached.cache_stats(c).maxsize == n
+    @test MemoizationKit.cache_stats(c).maxsize == n
     @test occursin("dash_square", line(draw(m), "set the limit"))
     # the limit is the function's (set with `set_cache_size!`), so it persists
-    @test Cached.REGISTRY.functions[dash_square].maxsize == n
+    @test MemoizationKit.REGISTRY.functions[dash_square].maxsize == n
 end
 
 @testset "resizing a byte-measured function keeps its cache" begin
     m = dashboard("dash_bytes")
     c = only(lines(m)).cache
-    @test Cached.cache_stats(c).by !== nothing && length(c) == 1
+    @test MemoizationKit.cache_stats(c).by !== nothing && length(c) == 1
     press(m, :enter, :right, :enter)
     @test only(cache_info(dash_bytes)).second === c # not discarded
-    @test length(c) == 1 && Cached.cache_stats(c).by !== nothing && Cached.cache_stats(c).maxsize == 2 * 10^6
+    @test length(c) == 1 && MemoizationKit.cache_stats(c).by !== nothing && MemoizationKit.cache_stats(c).maxsize == 2 * 10^6
 end
 
 @testset "refresh picks up new caches and rates" begin
@@ -230,7 +230,7 @@ end
     @test late.trend.rates[end] ≈ 2.0 && Ext.recent(late.trend) == 1.0
 
     # caches that disappear are dropped, with their trends
-    set_cache_size!(dash_late, 10; by = Cached.cachesize) # discards the cache
+    set_cache_size!(dash_late, 10; by = MemoizationKit.cachesize) # discards the cache
     Ext.refresh!(m)
     @test isempty(lines(m)) && !haskey(m.trends, late.cache)
     @test draw(m) isa TestBackend
@@ -298,8 +298,8 @@ end
 @testset "without SQLite" begin
     # a fresh process with this environment, which has SQLite without loading it
     code = """
-    using Cached, Tachikoma
-    const Ext = Base.get_extension(Cached, :CachedTachikomaExt)
+    using MemoizationKit, Tachikoma
+    const Ext = Base.get_extension(MemoizationKit, :MemoizationKitTachikomaExt)
     @cached nosql(x) = x
     nosql(1)
     m = Ext.Dashboard(; interval = Inf, filter = "nosql")
@@ -310,7 +310,7 @@ end
         return tb
     end
     tb = draw(m)
-    print(Base.get_extension(Cached, :CachedSQLiteExt) === nothing, " ", length(Ext.current(m).lines), " ")
+    print(Base.get_extension(MemoizationKit, :MemoizationKitSQLiteExt) === nothing, " ", length(Ext.current(m).lines), " ")
     print(Tachikoma.find_text(tb, "Clock") !== nothing, " ", Tachikoma.find_text(tb, "disk") === nothing, " ")
     Tachikoma.update!(m, Tachikoma.KeyEvent(:tab))
     tb = draw(m)
@@ -323,16 +323,16 @@ end
 end
 
 using SQLite: SQLite
-include(joinpath(pkgdir(Cached), "benchmark", "disk_stress.jl")) # `use_disk_path`
+include(joinpath(pkgdir(MemoizationKit), "benchmark", "disk_stress.jl")) # `use_disk_path`
 const DISK_ENV = use_disk_path(mktempdir())
 
 @cached dash_disk(x::Int) = x + 1
-Cached.DiskCacheStyle(::typeof(dash_disk), ::Int) = DiskCache()
+MemoizationKit.DiskCacheStyle(::typeof(dash_disk), ::Int) = DiskCache()
 @cached dash_diskonly(x::Int)::Int = 2x
-Cached.CacheStyle(::typeof(dash_diskonly), ::Int) = NoCache()
-Cached.DiskCacheStyle(::typeof(dash_diskonly), ::Int) = DiskCache()
+MemoizationKit.CacheStyle(::typeof(dash_diskonly), ::Int) = NoCache()
+MemoizationKit.DiskCacheStyle(::typeof(dash_diskonly), ::Int) = DiskCache()
 @cached dash_disknotyet(x::Int) = x # its store is opened on the first call
-Cached.DiskCacheStyle(::typeof(dash_disknotyet), ::Int) = DiskCache()
+MemoizationKit.DiskCacheStyle(::typeof(dash_disknotyet), ::Int) = DiskCache()
 
 # Draw until the entries and sizes on disk are read.
 function settle!(m; kw...)
@@ -353,7 +353,7 @@ end
     empty_caches!(dash_disk)
     dash_disk(1) # two misses on disk, then a hit
     foreach(dash_diskonly, (1, 1, 1, 2))
-    stats = Dict(Cached.disk_cache_stats())
+    stats = Dict(MemoizationKit.disk_cache_stats())
     @test stats[dash_disk] == (; hits = 1, misses = 2) && stats[dash_diskonly] == (; hits = 2, misses = 2)
     @test !haskey(stats, dash_disknotyet)
 
@@ -443,5 +443,5 @@ end
     @test find_text(tb, "Hit rate") !== nothing && occursin("░", row_text(tb, 4))
 end
 
-Base.get_extension(Cached, :CachedSQLiteExt).close_all()
+Base.get_extension(MemoizationKit, :MemoizationKitSQLiteExt).close_all()
 filter!(!=(DISK_ENV), LOAD_PATH)

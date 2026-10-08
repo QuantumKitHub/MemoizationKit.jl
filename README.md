@@ -1,9 +1,9 @@
-# Cached.jl
+# MemoizationKit.jl
 
-[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://lkdvos.github.io/Cached.jl/stable/)
-[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://lkdvos.github.io/Cached.jl/dev/)
-[![Build Status](https://github.com/lkdvos/Cached.jl/actions/workflows/Tests.yml/badge.svg?branch=main)](https://github.com/lkdvos/Cached.jl/actions/workflows/Tests.yml?query=branch%3Amain)
-[![Coverage](https://codecov.io/gh/lkdvos/Cached.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/lkdvos/Cached.jl)
+[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://lkdvos.github.io/MemoizationKit.jl/stable/)
+[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://lkdvos.github.io/MemoizationKit.jl/dev/)
+[![Build Status](https://github.com/lkdvos/MemoizationKit.jl/actions/workflows/Tests.yml/badge.svg?branch=main)](https://github.com/lkdvos/MemoizationKit.jl/actions/workflows/Tests.yml?query=branch%3Amain)
+[![Coverage](https://codecov.io/gh/lkdvos/MemoizationKit.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/lkdvos/MemoizationKit.jl)
 [![Code Style: Runic](https://img.shields.io/badge/code_style-%F0%9F%AA%A8_Runic-9558B2)](https://github.com/fredrikekre/Runic.jl)
 [![Aqua](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
 
@@ -13,12 +13,12 @@ Memoization for Julia, with bounded memory, persistent results, and a live view 
 - **Live dashboard:** watch hit rates and sizes, browse RAM and disk caches, and clear or resize RAM caches from your terminal.
 - **Fast RAM hits:** preserve return-type inference and avoid allocations with the built-in caches and concrete keys.
 - **Flexible strategies:** share results across tasks, keep them local to a task, or skip caching for selected argument types.
-- **Custom keys:** reuse results for equivalent inputs with `Cached.cachekey`, or customize hashing and equality with `Hashed`.
+- **Custom keys:** reuse results for equivalent inputs with `MemoizationKit.cachekey`, or customize hashing and equality with `Hashed`.
 - **Bounded storage:** Clock and LRU eviction, with limits in entries or bytes across a function's methods.
 - **Package controls:** set defaults per package or function, inspect caches programmatically, and profile lookups and computations with TimerOutputs.jl.
 
 ```julia
-using Cached
+using MemoizationKit
 
 @cached function fib(n::Int)::BigInt
     n < 2 ? BigInt(n) : fib(n - 1) + fib(n - 2)
@@ -36,13 +36,13 @@ Load SQLite.jl and opt a function into disk caching:
 
 ```julia
 using SQLite
-Cached.DiskCacheStyle(::typeof(fib), ::Int) = DiskCache()
+MemoizationKit.DiskCacheStyle(::typeof(fib), ::Int) = DiskCache()
 fib(200) # new results are kept in RAM and on disk
 ```
 
 Calls look in RAM, then on disk, before computing.
 Processes on the same machine share the database.
-You control result versions and disk cleanup; see [disk caching](https://lkdvos.github.io/Cached.jl/dev/disk/).
+You control result versions and disk cleanup; see [disk caching](https://lkdvos.github.io/MemoizationKit.jl/dev/disk/).
 
 ## See what your caches are doing
 
@@ -63,14 +63,14 @@ The dashboard shows recent hit rates, storage use, and activity, with separate R
  ⇥ tab  ↑↓ select  ⏎ resize  e empty  s sort  / filter  q quit
 ```
 
-See the [dashboard guide](https://lkdvos.github.io/Cached.jl/dev/dashboard/) for controls and statistics.
+See the [dashboard guide](https://lkdvos.github.io/MemoizationKit.jl/dev/dashboard/) for controls and statistics.
 
-## Why Cached?
+## Why MemoizationKit?
 
-Choose Cached when memoization needs ongoing management: memory limits, reuse across runs, or visibility into a running workload.
+Choose MemoizationKit when memoization needs ongoing management: memory limits, reuse across runs, or visibility into a running workload.
 It brings these tools together with strategies chosen by function and argument type.
 For a single in-memory cache, Memoize.jl or Memoization.jl with an LRU container may already cover your needs.
-See [the comparison and tradeoffs](https://lkdvos.github.io/Cached.jl/dev/#why-cached).
+See [the comparison and tradeoffs](https://lkdvos.github.io/MemoizationKit.jl/dev/#why-memoizationkit).
 
 Requires Julia 1.10 or later.
-Start with [usage](https://lkdvos.github.io/Cached.jl/dev/#usage), [configuration](https://lkdvos.github.io/Cached.jl/dev/configuration/), or [timing](https://lkdvos.github.io/Cached.jl/dev/timing/) in the [documentation](https://lkdvos.github.io/Cached.jl/dev/).
+Start with [usage](https://lkdvos.github.io/MemoizationKit.jl/dev/#usage), [configuration](https://lkdvos.github.io/MemoizationKit.jl/dev/configuration/), or [timing](https://lkdvos.github.io/MemoizationKit.jl/dev/timing/) in the [documentation](https://lkdvos.github.io/MemoizationKit.jl/dev/).

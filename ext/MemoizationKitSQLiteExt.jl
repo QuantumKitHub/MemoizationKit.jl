@@ -1,11 +1,11 @@
-module CachedSQLiteExt
+module MemoizationKitSQLiteExt
 
 # The disk caches of `DiskCache` (see `docs/src/disk.md`): per function, an optional read-only
 # artifact and one SQLite database per node, in WAL mode, shared by the processes of the node.
 # Nodes write separate files, as WAL needs shared memory, which network file systems do not
 # give across nodes. Disk errors never fail a call: they warn once and the call goes on.
 
-using Cached: Cached, DiskCache, _compute, _fname, _owner, _ispackage, _within, instrument,
+using MemoizationKit: MemoizationKit, DiskCache, _compute, _fname, _owner, _ispackage, _within, instrument,
     _resolve_settings, _cached_section, _package_section, get_scratch!, sha256
 using SQLite: SQLite, DBInterface
 using Serialization: serialize, deserialize, writeheader
@@ -88,11 +88,11 @@ const LOCK = ReentrantLock()
 _sanitize(s) = replace(string(s), r"[^A-Za-z0-9_.]" => c -> join("%" * string(b; base = 16, pad = 2) for b in codeunits(c)))
 
 # `<Module>.<f>-v<version>`: the file name of an artifact, followed by `-<host>` on a node.
-storename(f) = string(_sanitize(join((fullname(parentmodule(typeof(f)))..., _fname(f)), '.')), "-v", _sanitize(Cached.diskversion(f)))
+storename(f) = string(_sanitize(join((fullname(parentmodule(typeof(f)))..., _fname(f)), '.')), "-v", _sanitize(MemoizationKit.diskversion(f)))
 
-# Without the `disk_path` preference: a scratch space of the package owning `f`, or of Cached.
-diskdir(f, path) = !isempty(path) ? path : _ispackage(_owner(f)) ? get_scratch!(_owner(f), "Cached") :
-    get_scratch!(Cached, string(nameof(_owner(f))))
+# Without the `disk_path` preference: a scratch space of the package owning `f`, or of MemoizationKit.
+diskdir(f, path) = !isempty(path) ? path : _ispackage(_owner(f)) ? get_scratch!(_owner(f), "MemoizationKit") :
+    get_scratch!(MemoizationKit, string(nameof(_owner(f))))
 
 function stores(f::F) where {F}
     s = @lock LOCK get(STORES, F, nothing)
@@ -106,7 +106,7 @@ end
 function open_stores(f)
     settings = _resolve_settings(_fname(f), _cached_section(), _package_section(f))
     settings.disk || return Stores(f, nothing, nothing)
-    dir = Cached.disk_artifact(f)
+    dir = MemoizationKit.disk_artifact(f)
     artifact = dir === nothing ? nothing : attempt(() -> Store(joinpath(dir, storename(f) * ".sqlite"); immutable = true), "open the disk artifact of `$(_fname(f))` in $dir")
     path = joinpath(diskdir(f, settings.disk_path), string(storename(f), '-', _sanitize(gethostname()), ".sqlite"))
     return Stores(f, artifact, attempt(() -> Store(path), "open the disk cache of `$(_fname(f))` at $path"))
@@ -123,7 +123,7 @@ function attempt(f, msg)
         f()
     catch e
         e isa InterruptException && rethrow()
-        msg === nothing || @warn "Cached: cannot $msg; continuing without it" exception = e maxlog = 1 _id = Symbol(msg)
+        msg === nothing || @warn "MemoizationKit: cannot $msg; continuing without it" exception = e maxlog = 1 _id = Symbol(msg)
         nothing
     end
 end
@@ -138,7 +138,7 @@ end
 
 # ---- the lookup ----
 
-function Cached.disk_lookup(f::F, ::DiskCache{S}, ::Type{V}, key, args, kw, o) where {F, S, V}
+function MemoizationKit.disk_lookup(f::F, ::DiskCache{S}, ::Type{V}, key, args, kw, o) where {F, S, V}
     s = stores(f)
     s.artifact === nothing && s.node === nothing && return _compute(f, o, args, kw)
     return instrument(f, Val(:disk), () -> lookup(f, s, S, V, key, args, kw, o), o)
@@ -173,7 +173,7 @@ selector(f) = (stores(f); s -> s.f isa typeof(f))
 selector(m::Module) = s -> _within(parentmodule(typeof(s.f)), m)
 selected(x) = (select = selector(x); [s for s in @lock(LOCK, collect(values(STORES))) if s.node !== nothing && select(s)])
 
-function Cached.disk_cache_info(x)
+function MemoizationKit.disk_cache_info(x)
     return map(selected(x)) do s
         path = s.node.db.file
         entries = @lock s.node.lock scalar(s.node.db, "SELECT count(*) FROM entries")::Int
@@ -181,13 +181,13 @@ function Cached.disk_cache_info(x)
     end
 end
 
-Cached.disk_cache_stats() = Pair{Any, @NamedTuple{hits::Int, misses::Int}}[
+MemoizationKit.disk_cache_stats() = Pair{Any, @NamedTuple{hits::Int, misses::Int}}[
     s.f => (; hits = s.hits[], misses = s.misses[]) for s in @lock(LOCK, collect(values(STORES))) if s.artifact !== nothing || s.node !== nothing
 ]
 
-Cached.empty_disk_caches!(x) = foreach(s -> @lock(s.node.lock, SQLite.execute(s.node.db, "DELETE FROM entries")), selected(x))
+MemoizationKit.empty_disk_caches!(x) = foreach(s -> @lock(s.node.lock, SQLite.execute(s.node.db, "DELETE FROM entries")), selected(x))
 
-function Cached.export_disk_cache(f, dir::AbstractString)
+function MemoizationKit.export_disk_cache(f, dir::AbstractString)
     node = stores(f).node
     node === nothing && throw(ArgumentError("disk caching is disabled for `$(_fname(f))`"))
     path = joinpath(dir, storename(f) * ".sqlite")
@@ -203,4 +203,4 @@ function Cached.export_disk_cache(f, dir::AbstractString)
     return path
 end
 
-end # module CachedSQLiteExt
+end # module MemoizationKitSQLiteExt

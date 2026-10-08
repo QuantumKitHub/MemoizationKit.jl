@@ -1,7 +1,7 @@
 # Timing
 
 ```@meta
-CurrentModule = Cached
+CurrentModule = MemoizationKit
 ```
 
 With [TimerOutputs.jl](https://github.com/KristofferC/TimerOutputs.jl) loaded, [`enable_cache_timers!`](@ref) records the time spent in the cached functions of a package, in sections per function:
@@ -11,7 +11,7 @@ With [TimerOutputs.jl](https://github.com/KristofferC/TimerOutputs.jl) loaded, [
 - `disk f`, for functions with a [disk cache](disk.md), wraps the disk lookup after a RAM miss, with `compute f` nested in it when the disk misses too.
 
 ```@example timer
-using Cached, TimerOutputs
+using MemoizationKit, TimerOutputs
 
 @cached weights(a, b, c) = a + b * c
 @cached matrix(n::Int)::Matrix{Float64} = zeros(n, n)
@@ -37,12 +37,12 @@ For instance, if `MyPackage` adds `@cached` methods to a function `OtherPackage.
 A package that wants all of its cached functions timed enables the packages that own them:
 
 ```@example owners
-using Cached, TimerOutputs # hide
+using MemoizationKit, TimerOutputs # hide
 module MyPackage # hide
     function enable_timers! end # hide
 end # hide
 module OtherPackage # hide
-    using Cached # hide
+    using MemoizationKit # hide
     @cached f(x) = x^2 # hide
 end # hide
 TIMER = TimerOutput() # hide
@@ -58,9 +58,9 @@ disable_cache_timers!(OtherPackage)
 TIMER
 ```
 
-The labels come from [`Cached.instrument_label`](@ref), `"lookup f"` and `"compute f"` by default; overload it to pick your own:
+The labels come from [`MemoizationKit.instrument_label`](@ref), `"lookup f"` and `"compute f"` by default; overload it to pick your own:
 
 ```@example timer
-Cached.instrument_label(::typeof(weights), ::Val{:lookup}) = "cache: weights"
-Cached.instrument_label(weights, Val(:lookup))
+MemoizationKit.instrument_label(::typeof(weights), ::Val{:lookup}) = "cache: weights"
+MemoizationKit.instrument_label(weights, Val(:lookup))
 ```

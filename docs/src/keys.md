@@ -1,11 +1,11 @@
 # Custom cache keys
 
 ```@meta
-CurrentModule = Cached
+CurrentModule = MemoizationKit
 ```
 
 A computation may depend on only part of its input: an array's shape, a tensor space's sector structure, or a normalized name.
-Specialize [`Cached.cachekey`](@ref) to let equivalent inputs share a cached result.
+Specialize [`MemoizationKit.cachekey`](@ref) to let equivalent inputs share a cached result.
 The function body, return-type inference, [`CacheStyle`](@ref), and [`DiskCacheStyle`](@ref) still use the original arguments.
 
 ## The default key
@@ -13,9 +13,9 @@ The function body, return-type inference, [`CacheStyle`](@ref), and [`DiskCacheS
 Without an overload, the key contains every positional argument and, when present, the keyword `NamedTuple`:
 
 ```jldoctest
-using Cached
+using MemoizationKit
 
-(Cached.cachekey(identity, 1, 2), Cached.cachekey(identity, 1, 2; scale = 3))
+(MemoizationKit.cachekey(identity, 1, 2), MemoizationKit.cachekey(identity, 1, 2; scale = 3))
 
 # output
 
@@ -32,10 +32,10 @@ A canonical key contains the properties that determine the result.
 This example computes the same allocation shape for any input of a given length:
 
 ```jldoctest canonical-key
-using Cached
+using MemoizationKit
 
 @cached allocation_shape(x; copies = 1) = (length(x), copies)
-Cached.cachekey(::typeof(allocation_shape), x; copies = 1) = (length(x), copies)
+MemoizationKit.cachekey(::typeof(allocation_shape), x; copies = 1) = (length(x), copies)
 
 a = allocation_shape([1, 2])
 b = allocation_shape((3, 4))
@@ -47,7 +47,7 @@ b = allocation_shape((3, 4))
 ```
 
 The vector and tuple share an entry because both calls produce the key `(2, 1)`.
-Cached does not retain the original argument types alongside a custom key.
+MemoizationKit does not retain the original argument types alongside a custom key.
 Keywords that affect the result belong in the key too:
 
 ```jldoctest canonical-key
@@ -68,7 +68,7 @@ Returning a compact tuple is often sufficient; no wrapper is required.
 The same mapping can serve several cached methods of one function:
 
 ```jldoctest shared-methods
-using Cached
+using MemoizationKit
 
 computations = Ref(0)
 
@@ -80,7 +80,7 @@ end
     computations[] += 1
     return length(x)
 end
-Cached.cachekey(::typeof(nitems), x) = length(x)
+MemoizationKit.cachekey(::typeof(nitems), x) = length(x)
 
 a = nitems([1, 2])
 b = nitems((3, 4))
@@ -106,13 +106,13 @@ When forming a canonical representation is expensive, [`Hashed`](@ref) keeps the
 The hash callable takes `(value, seed::UInt)`; the equality callable takes two wrapped values and returns a `Bool`.
 
 ```jldoctest hashed-key
-using Cached
+using MemoizationKit
 
 lengthhash(x, seed::UInt) = hash(length(x), seed)
 lengthequal(x, y) = isequal(length(x), length(y))
 
 @cached wrapped_shape(x; copies = 1) = (length(x), copies)
-Cached.cachekey(::typeof(wrapped_shape), x; copies = 1) =
+MemoizationKit.cachekey(::typeof(wrapped_shape), x; copies = 1) =
     (Hashed(x, lengthhash, lengthequal), copies)
 
 a = wrapped_shape([1, 2])
@@ -147,7 +147,7 @@ Two wrappers compare equal only when both callables are identical under `===`.
 Closures with different captured settings therefore remain separate even if they have the same function type.
 
 The wrapper's type includes the wrapped value type.
-Consequently, wrappers around a vector and a tuple do not share an entry in Cached's RAM containers.
+Consequently, wrappers around a vector and a tuple do not share an entry in MemoizationKit's RAM containers.
 Return a canonical key of a common type when sharing across those inputs is needed.
 
 ## Choosing valid equality
@@ -162,7 +162,7 @@ For tolerance-based grouping, define explicit buckets and use the bucket identif
 Keep every property used by hashing or equality stable while its key is stored.
 A `Hashed` wrapper retains its input rather than copying it, so mutating relevant fields can invalidate the cache's lookup assumptions.
 A canonical key made from immutable properties avoids that dependency.
-Cached results themselves are shared objects; mutations of a cached result are visible to other callers sharing its key.
+MemoizationKit results themselves are shared objects; mutations of a cached result are visible to other callers sharing its key.
 
 ## RAM and disk caching
 
@@ -178,5 +178,5 @@ To share them, return a canonical key that serializes to the same bytes for equi
 Disk caching still needs SQLite.jl and a [`DiskCacheStyle`](@ref) overload; see [Disk caching](disk.md).
 
 After changing a key mapping, call [`empty_caches!`](@ref) for the function.
-If it uses disk caching, also change [`Cached.diskversion`](@ref) or empty its disk cache so entries created under the previous mapping are no longer used.
+If it uses disk caching, also change [`MemoizationKit.diskversion`](@ref) or empty its disk cache so entries created under the previous mapping are no longer used.
 [`uncached`](@ref) bypasses the key hook and all caches; with positional defaults, supply the full arguments to the implementation.

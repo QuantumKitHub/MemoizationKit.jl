@@ -1,6 +1,6 @@
 [deps]
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
-Cached = "1b238080-9255-4fe9-b224-89eb24efe93b"
+MemoizationKit = "1b238080-9255-4fe9-b224-89eb24efe93b"
 ParallelTestRunner = "d3525ed8-44d0-4b2c-a655-542cee43accc"
 Preferences = "21216c6a-2e73-6563-6e65-726566657250"
 SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
@@ -10,7 +10,7 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 TimerOutputs = "a759f4b9-e2f1-59dc-863e-4aeb61b1ea8f"
 
 [sources]
-Cached = {path = ".."}
+MemoizationKit = {path = ".."}
 
 [compat]
 Aqua = "0.8.9"

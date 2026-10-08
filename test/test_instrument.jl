@@ -1,23 +1,23 @@
 using Test
-using Cached
-using Cached: instrument, instrument_label
+using MemoizationKit
+using MemoizationKit: instrument, instrument_label
 
 # A module owning cached functions, instrumented by hand to record the phases
 module Traced
-    using Cached
+    using MemoizationKit
     const LOG = Symbol[]
     const calls = Ref(0)
     @cached f(x) = (calls[] += 1; x + 1)
     @cached nocache(x) = (calls[] += 1; x)
-    Cached.CacheStyle(::typeof(nocache), ::Int) = NoCache()
+    MemoizationKit.CacheStyle(::typeof(nocache), ::Int) = NoCache()
     @cached tasklocal(x) = (calls[] += 1; x)
-    Cached.CacheStyle(::typeof(tasklocal), ::Int) = TaskLocalCache{LRU}()
+    MemoizationKit.CacheStyle(::typeof(tasklocal), ::Int) = TaskLocalCache{LRU}()
     struct Scale
         a::Int
     end
     @cached (s::Scale)(x) = (calls[] += 1; s.a * x)
 
-    function Cached.instrument(f, ::Val{phase}, thunk, ::Val{fullname(@__MODULE__)}) where {phase}
+    function MemoizationKit.instrument(f, ::Val{phase}, thunk, ::Val{fullname(@__MODULE__)}) where {phase}
         push!(LOG, Symbol(:enter_, phase))
         r = thunk()
         push!(LOG, Symbol(:leave_, phase))
@@ -33,10 +33,10 @@ const HIT = [:enter_lookup, :leave_lookup]
 const COMPUTE = [:enter_compute, :leave_compute]
 
 @testset "phases nest" begin
-    @test Cached._ownerval(Traced.Scale) === Val(fullname(Traced))
-    @test Cached._owner(Traced) === Traced # outside packages, modules own their functions
-    @test Cached._owner(Base.Iterators) === Base && Cached._owner(Base) === Base
-    @test Cached._ownerval(typeof(Base.Iterators.flatten)) === Val((:Base,))
+    @test MemoizationKit._ownerval(Traced.Scale) === Val(fullname(Traced))
+    @test MemoizationKit._owner(Traced) === Traced # outside packages, modules own their functions
+    @test MemoizationKit._owner(Base.Iterators) === Base && MemoizationKit._owner(Base) === Base
+    @test MemoizationKit._ownerval(typeof(Base.Iterators.flatten)) === Val((:Base,))
     @test ncalls(() -> Traced.f(1)) == (2, 1) && takelog!() == MISS
     @test ncalls(() -> Traced.f(1)) == (2, 0) && takelog!() == HIT
     @test ncalls(() -> uncached(Traced.f, 1)) == (2, 1) && isempty(takelog!())
@@ -59,13 +59,13 @@ end
 
 @cached plain(x) = x^2
 @cached plain_nocache(x)::Int = x
-Cached.CacheStyle(::typeof(plain_nocache), ::Int) = NoCache()
+MemoizationKit.CacheStyle(::typeof(plain_nocache), ::Int) = NoCache()
 allocs(f, x) = (f(x); @allocated f(x)) # in a function, as Julia 1.10 allocates at top level
 @cached fresh(x::Int) = x # first compiled inside a caller, where Julia 1.10 could box closures
 sumfresh(xs) = sum(fresh, xs)
 
 @testset "default hook costs nothing" begin
-    @test instrument(plain, Val(:lookup), () -> 1, Cached._ownerval(typeof(plain))) == 1
+    @test instrument(plain, Val(:lookup), () -> 1, MemoizationKit._ownerval(typeof(plain))) == 1
     @test @inferred(plain(3)) == 9
     @test allocs(plain, 3) == 0
     @test @inferred(plain_nocache(3)) == 3
@@ -79,13 +79,13 @@ end
 end
 
 @testset "error hints without TimerOutputs" begin
-    # a fresh process with Cached only, since this one loads TimerOutputs below
+    # a fresh process with MemoizationKit only, since this one loads TimerOutputs below
     mktempdir() do env
         code = """
         using Pkg
         Pkg.activate($(repr(env)); io = devnull)
-        Pkg.develop(path = $(repr(pkgdir(Cached))); io = devnull)
-        using Cached
+        Pkg.develop(path = $(repr(pkgdir(MemoizationKit))); io = devnull)
+        using MemoizationKit
         for call in (() -> enable_cache_timers!(Main), () -> disable_cache_timers!(Main))
             try
                 call()
@@ -109,17 +109,17 @@ end
 using TimerOutputs: TimerOutputs, TimerOutput
 
 module A
-    using Cached
+    using MemoizationKit
     @cached f(x::Int) = x + 1
 end
 
 module B
-    using Cached
+    using MemoizationKit
     using ..A: A
     struct BType end
     @cached A.f(::BType) = 0 # owned by A
     @cached g(x) = x
-    Cached.instrument_label(::typeof(g), ::Val{:lookup}) = "my lookup g"
+    MemoizationKit.instrument_label(::typeof(g), ::Val{:lookup}) = "my lookup g"
 end
 
 # calls of the (nested) section `labels`, 0 if absent
@@ -127,7 +127,7 @@ section_calls(to, labels...) = haskey(to, first(labels)) ? TimerOutputs.ncalls(t
 
 hit_f() = A.f(1)
 # methods of `instrument` defined by the extension
-ntimed() = count(m -> m.module === Base.get_extension(Cached, :CachedTimerOutputsExt), methods(instrument))
+ntimed() = count(m -> m.module === Base.get_extension(MemoizationKit, :MemoizationKitTimerOutputsExt), methods(instrument))
 
 const to = TimerOutput()
 hit_f() # compiled before enabling
@@ -135,13 +135,13 @@ hit_f() # compiled before enabling
 enable_cache_timers!(A, to)
 
 @testset "timers per owner module" begin
-    @test Base.get_extension(Cached, :CachedTimerOutputsExt) !== nothing
+    @test Base.get_extension(MemoizationKit, :MemoizationKitTimerOutputsExt) !== nothing
     @test A.f(1) == 2 && A.f(2) == 3 && A.f(B.BType()) == 0 && hit_f() == 2
     @test section_calls(to, "lookup f") == 4
     @test section_calls(to, "lookup f", "compute f") == 2
     @test B.g(1) == 1 && !haskey(to, "lookup g") && !haskey(to, "my lookup g")
     @test @inferred(A.f(1)) == 2
-    @test isempty(Test.detect_ambiguities(Cached))
+    @test isempty(Test.detect_ambiguities(MemoizationKit))
 end
 
 const to2 = TimerOutput()
