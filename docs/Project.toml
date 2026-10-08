@@ -1,5 +1,5 @@
 [deps]
-Cached = "1b238080-9255-4fe9-b224-89eb24efe93b"
+MemoizationKit = "1b238080-9255-4fe9-b224-89eb24efe93b"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
 Tachikoma = "468859d6-42d8-48b7-8ad9-1d312e0e3b0a"
@@ -12,4 +12,4 @@ Tachikoma = "2.7"
 TimerOutputs = "0.5, 1"
 
 [sources]
-Cached = {path = ".."}
+MemoizationKit = {path = ".."}

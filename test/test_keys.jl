@@ -1,5 +1,5 @@
 using Test
-using Cached
+using MemoizationKit
 
 lenhash(x, seed) = hash(length(x), seed)
 lenequal(x, y) = isequal(length(x), length(y))

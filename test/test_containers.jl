@@ -1,6 +1,6 @@
 using Test
-using Cached
-using Cached: AbstractCache, cache_stats
+using MemoizationKit
+using MemoizationKit: AbstractCache, cache_stats
 
 const CACHETYPES = (LRU, ClockCache)
 

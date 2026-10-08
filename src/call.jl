@@ -1,5 +1,5 @@
 """
-    Cached.implementation(f, args...; kwargs...)
+    MemoizationKit.implementation(f, args...; kwargs...)
 
 The uncached body of a [`@cached`](@ref) function `f`. The macro moves the body of each cached
 method here, dispatching on `typeof(f)`; call it through [`uncached`](@ref).
@@ -26,7 +26,7 @@ _owner(m::Module) = (r = Base.moduleroot(m)) === Main ? m : r
 @generated _ownerval(::Type{F}) where {F} = :(Val{$(fullname(_owner(parentmodule(F))))}())
 
 """
-    Cached.instrument_label(f, ::Val{phase}) -> String
+    MemoizationKit.instrument_label(f, ::Val{phase}) -> String
 
 Label of the `phase` of `f` in the sections recorded by [`enable_cache_timers!`](@ref).
 Defaults to `"lookup f"` and `"compute f"`, with the name of `f`; overload it to choose your own.
@@ -74,11 +74,11 @@ _container(f::F, ::GlobalCache{C}, key, ::Type) where {F, C} = globalcache(f, C{
 
 function _container(f::F, ::TaskLocalCache{C}, key::K, ::Type{V}) where {F, C, K, V}
     T = _localtype(C, K, V)
-    table = get!(IdDict{Any, Any}, task_local_storage(), :__Cached_tasklocal__)::IdDict{Any, Any}
+    table = get!(IdDict{Any, Any}, task_local_storage(), :__MemoizationKit_tasklocal__)::IdDict{Any, Any}
     return get!(() -> _newlocal(f, T), table, (f, T))::T
 end
 
-# One untyped cache per function for the containers of Cached; other dictionaries (e.g. `Dict`)
+# One untyped cache per function for the containers of MemoizationKit; other dictionaries (e.g. `Dict`)
 # would box untyped keys, so they get one typed dictionary per key and value type.
 _localtype(C, K, V) = C isa UnionAll ? (C <: AbstractCache ? C{Any, Any} : C{K, V}) : C
 # Task-local caches follow the size settings of `f`, but are not registered.

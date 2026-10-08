@@ -1,17 +1,17 @@
 # Reference
 
 ```@meta
-CurrentModule = Cached
+CurrentModule = MemoizationKit
 ```
 
 ## Cache containers
 
 ```@docs
-Cached.AbstractCache
+MemoizationKit.AbstractCache
 LRU
 ClockCache
-resize!(::Cached.AbstractCache)
-Cached.cache_stats
+resize!(::MemoizationKit.AbstractCache)
+MemoizationKit.cache_stats
 ```
 
 ## Caching functions
@@ -19,7 +19,7 @@ Cached.cache_stats
 ```@docs
 @cached
 uncached
-Cached.implementation
+MemoizationKit.implementation
 ```
 
 ## Custom cache keys
@@ -27,7 +27,7 @@ Cached.implementation
 See [Custom cache keys](keys.md) for canonical keys, custom equality, and sharing across methods.
 
 ```@docs
-Cached.cachekey
+MemoizationKit.cachekey
 Hashed
 ```
 
@@ -48,7 +48,7 @@ cache_info
 empty_caches!
 set_cache_size!
 set_cache_preferences!
-Cached.cachesize
+MemoizationKit.cachesize
 cache_dashboard
 ```
 
@@ -57,10 +57,10 @@ cache_dashboard
 ```@docs
 DiskCacheStyle
 DiskCache
-Cached.diskversion
-Cached.disk_artifact
+MemoizationKit.diskversion
+MemoizationKit.disk_artifact
 disk_cache_info
-Cached.disk_cache_stats
+MemoizationKit.disk_cache_stats
 empty_disk_caches!
 export_disk_cache
 disable_disk_caches!
@@ -70,7 +70,7 @@ enable_disk_caches!
 ## Hooks and timing
 
 ```@docs
-Cached.instrument_label
+MemoizationKit.instrument_label
 enable_cache_timers!
 disable_cache_timers!
 ```

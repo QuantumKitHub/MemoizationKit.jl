@@ -5,11 +5,11 @@ let env = mktempdir(), uid = Base.UUID(rand(UInt128))
     mkpath(src)
     write(
         joinpath(dirname(src), "Project.toml"),
-        "name = \"MyPackage\"\nuuid = \"$uid\"\n[deps]\nCached = \"$(Base.PkgId(Cached).uuid)\"\n",
+        "name = \"MyPackage\"\nuuid = \"$uid\"\n[deps]\nMemoizationKit = \"$(Base.PkgId(MemoizationKit).uuid)\"\n",
     )
     write(
         joinpath(src, "MyPackage.jl"),
-        "__precompile__(false)\nmodule MyPackage\nusing Cached\n@cached expensive(x) = x^2\nend\n",
+        "__precompile__(false)\nmodule MyPackage\nusing MemoizationKit\n@cached expensive(x) = x^2\nend\n",
     )
     pushfirst!(LOAD_PATH, env)
     package = try
@@ -19,7 +19,7 @@ let env = mktempdir(), uid = Base.UUID(rand(UInt128))
     end
     write(
         joinpath(env, "Project.toml"),
-        "[deps]\nCached = \"$(Base.PkgId(Cached).uuid)\"\nMyPackage = \"$uid\"\n",
+        "[deps]\nMemoizationKit = \"$(Base.PkgId(MemoizationKit).uuid)\"\nMyPackage = \"$uid\"\n",
     )
     with_preferences = function (f)
         original = Base.ACTIVE_PROJECT[]

@@ -10,7 +10,7 @@ Two wrappers compare equal only when their hash and equality callables are ident
 relation, and equivalent values must have equal hashes for every seed. Values and
 callable state that affect hashing or equality must remain unchanged while stored.
 
-Use [`Cached.cachekey`](@ref) to wrap inputs without changing a cached function's signature.
+Use [`MemoizationKit.cachekey`](@ref) to wrap inputs without changing a cached function's signature.
 Custom equality affects RAM caching; disk caching compares serialized key bytes.
 """
 struct Hashed{T, H, E}
@@ -30,26 +30,26 @@ Base.isequal(a::Hashed{<:Any, H, E}, b::Hashed{<:Any, H, E}) where {H, E} =
 Base.:(==)(a::Hashed, b::Hashed) = isequal(a, b)
 
 """
-    Cached.cachekey(f, args...; kwargs...)
+    MemoizationKit.cachekey(f, args...; kwargs...)
 
 Return the key used to memoize a call of a [`@cached`](@ref) function. By default it is
 the positional argument tuple, followed by the keyword `NamedTuple` when nonempty.
 Specialize this function to map equivalent inputs to a shared key:
 
 ```julia
-Cached.cachekey(::typeof(f), x; scale = 1) = (length(x), scale)
-Cached.cachekey(::typeof(g), x) = (Hashed(x, customhash, customequal),)
+MemoizationKit.cachekey(::typeof(f), x; scale = 1) = (length(x), scale)
+MemoizationKit.cachekey(::typeof(g), x) = (Hashed(x, customhash, customequal),)
 ```
 
 The implementation, return-type inference, and cache strategies still receive the original
 arguments. Custom keys can merge calls to different methods or argument types; all merged
-calls must admit the same cached result, including its return type. Cached's RAM containers
+calls must admit the same cached result, including its return type. MemoizationKit's RAM containers
 distinguish key types, so keys intended to share an entry must also have the same type.
 The key must remain stable while cached. [`uncached`](@ref) bypasses this hook.
 
 RAM caches use hashing and equality; disk caches compare serialized bytes, so a canonical
 representation is needed to share disk entries between different inputs. After changing
-the mapping, empty existing RAM caches and update [`Cached.diskversion`](@ref) if using disk.
+the mapping, empty existing RAM caches and update [`MemoizationKit.diskversion`](@ref) if using disk.
 """
 cachekey(f, args...; kwargs...) = _key(args, NamedTuple(kwargs))
 

@@ -1,19 +1,19 @@
 # Implementing a cache
 
 ```@meta
-CurrentModule = Cached
+CurrentModule = MemoizationKit
 ```
 
-A [`Cached.AbstractCache`](@ref) is the container behind [`GlobalCache`](@ref) and [`TaskLocalCache`](@ref).
-Besides [`LRU`](@ref) and [`ClockCache`](@ref), any subtype `C{K, V} <: Cached.AbstractCache{K, V}` implementing these methods can be used:
+A [`MemoizationKit.AbstractCache`](@ref) is the container behind [`GlobalCache`](@ref) and [`TaskLocalCache`](@ref).
+Besides [`LRU`](@ref) and [`ClockCache`](@ref), any subtype `C{K, V} <: MemoizationKit.AbstractCache{K, V}` implementing these methods can be used:
 
 | Method | Contract |
 | :----- | :------- |
 | `C{K, V}(; maxsize, by)` | An empty cache. `maxsize` bounds the number of entries, or the sum of `by(value)` if `by !== nothing`. |
 | `get!(default, c, key)` | The value stored for `key`, or else `default()`, stored if it fits. Keys of different types are different entries. |
 | `empty!(c)` | Remove all entries, keeping the statistics. |
-| [`resize!(c; maxsize)`](@ref resize!(::Cached.AbstractCache)) | Set the size limit, evicting entries until they fit. |
-| [`Cached.cache_stats(c)`](@ref) | `(; hits, misses, length, currentsize, maxsize, by)` |
+| [`resize!(c; maxsize)`](@ref resize!(::MemoizationKit.AbstractCache)) | Set the size limit, evicting entries until they fit. |
+| [`MemoizationKit.cache_stats(c)`](@ref) | `(; hits, misses, length, currentsize, maxsize, by)` |
 
 They may be called from any task, so they must be thread-safe, and `get!` must not hold a lock while it calls `default`, which may recurse into the same cache or throw.
 `show` is derived from `cache_stats`; the other `AbstractDict` methods are optional.
@@ -21,9 +21,9 @@ They may be called from any task, so they must be thread-safe, and `get!` must n
 ## Example: first in, first out
 
 ```jldoctest fifo
-using Cached
+using MemoizationKit
 
-mutable struct FIFO{K, V} <: Cached.AbstractCache{K, V}
+mutable struct FIFO{K, V} <: MemoizationKit.AbstractCache{K, V}
     const entries::Dict{Any, Tuple{V, Int}} # (typeof(key), key) => (value, size)
     const order::Vector{Any}                # keys of `entries`, oldest first
     const lock::ReentrantLock
@@ -64,11 +64,11 @@ end
 
 Base.empty!(c::FIFO) = @lock c.lock (empty!(c.entries); empty!(c.order); c.currentsize = 0; c)
 Base.resize!(c::FIFO; maxsize::Integer) = @lock c.lock (c.maxsize = maxsize; evict!(c))
-Cached.cache_stats(c::FIFO) =
+MemoizationKit.cache_stats(c::FIFO) =
     @lock c.lock (; c.hits, c.misses, length = length(c.entries), c.currentsize, c.maxsize, c.by)
 
 @cached square(x) = x^2
-Cached.CacheStyle(::typeof(square), x) = GlobalCache{FIFO}()
+MemoizationKit.CacheStyle(::typeof(square), x) = GlobalCache{FIFO}()
 
 square.(1:3); square(3); square(3.0)
 set_cache_size!(square, 2) # evicts square(1) and square(2)

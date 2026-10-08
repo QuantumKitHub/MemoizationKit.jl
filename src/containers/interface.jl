@@ -3,7 +3,7 @@
 
 Supertype of the containers of [`GlobalCache`](@ref) and [`TaskLocalCache`](@ref). A subtype
 `C` implements `C{K, V}(; maxsize, by)`, `get!(default, c, key)`, `empty!(c)`,
-[`resize!(c; maxsize)`](@ref resize!(::Cached.AbstractCache)) and [`Cached.cache_stats(c)`](@ref);
+[`resize!(c; maxsize)`](@ref resize!(::MemoizationKit.AbstractCache)) and [`MemoizationKit.cache_stats(c)`](@ref);
 see [Implementing a cache](@ref). Other `AbstractDict` methods are optional.
 
 [`LRU`](@ref) and [`ClockCache`](@ref) are thread-safe dictionaries that convert keys to `K`.

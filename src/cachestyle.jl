@@ -7,8 +7,8 @@ The strategy for a call `f(args...)` is chosen by `CacheStyle(f, args...)`, whic
 [`GlobalCache()`](@ref GlobalCache). Specialize it to change the strategy per function or argument type:
 
 ```julia
-Cached.CacheStyle(::typeof(f), x::SmallKey) = NoCache()
-Cached.CacheStyle(::typeof(f), x::ThreadedKey) = TaskLocalCache{LRU}()
+MemoizationKit.CacheStyle(::typeof(f), x::SmallKey) = NoCache()
+MemoizationKit.CacheStyle(::typeof(f), x::ThreadedKey) = TaskLocalCache{LRU}()
 ```
 
 See also [`NoCache`](@ref), [`GlobalCache`](@ref), [`TaskLocalCache`](@ref).

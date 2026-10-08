@@ -1,9 +1,9 @@
 using Test
-using Cached
+using MemoizationKit
 using Preferences
 using Aqua: Aqua
 
-resolve(args...) = Cached._resolve_settings(args...)[(:maxsize, :by)] # the RAM settings
+resolve(args...) = MemoizationKit._resolve_settings(args...)[(:maxsize, :by)] # the RAM settings
 caches(f) = last.(cache_info(f))
 
 @testset "resolution order" begin
@@ -11,8 +11,8 @@ caches(f) = last.(cache_info(f))
     cached = Dict{String, Any}("maxsize" => 500)
     @test resolve("f", cached, nothing) == (; maxsize = 500, by = nothing)
     package = Dict{String, Any}("maxsize" => 50, "measure" => "bytes", "g" => Dict{String, Any}("maxsize" => 5))
-    @test resolve("f", cached, package) == (; maxsize = 50, by = Cached.cachesize)
-    @test resolve("g", cached, package) == (; maxsize = 5, by = Cached.cachesize)
+    @test resolve("f", cached, package) == (; maxsize = 50, by = MemoizationKit.cachesize)
+    @test resolve("g", cached, package) == (; maxsize = 5, by = MemoizationKit.cachesize)
 end
 
 @testset "invalid preferences are ignored with a warning" begin
@@ -46,7 +46,7 @@ function with_private_preferences(f)
         """
         [deps]
         Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
-        Cached = "1b238080-9255-4fe9-b224-89eb24efe93b"
+        MemoizationKit = "1b238080-9255-4fe9-b224-89eb24efe93b"
         """
     )
     old = Base.ACTIVE_PROJECT[]
@@ -60,34 +60,34 @@ end
 
 with_private_preferences() do
     @testset "preferences are read when a function's first cache is created" begin
-        # Cached's own section
-        set_preferences!(Cached, "maxsize" => 7, "measure" => "count"; force = true)
+        # MemoizationKit's own section
+        set_preferences!(MemoizationKit, "maxsize" => 7, "measure" => "count"; force = true)
         try
             fromcached(1)
-            @test Cached.cache_stats(only(cache_info(fromcached)).second).maxsize == 7
+            @test MemoizationKit.cache_stats(only(cache_info(fromcached)).second).maxsize == 7
         finally
-            delete_preferences!(Cached, "maxsize", "measure"; force = true)
+            delete_preferences!(MemoizationKit, "maxsize", "measure"; force = true)
         end
 
         # the section of the package that owns the function (here Aqua), and per-function sections
         set_preferences!(
-            Aqua, "Cached" => Dict("maxsize" => 3, "test_ambiguities" => Dict("maxsize" => 2));
+            Aqua, "MemoizationKit" => Dict("maxsize" => 3, "test_ambiguities" => Dict("maxsize" => 2));
             force = true
         )
         try
             Aqua.test_all(Key(1))
             Aqua.test_ambiguities(Key(1))
-            @test Cached.cache_stats(only(cache_info(Aqua.test_all)).second).maxsize == 3
-            @test Cached.cache_stats(only(cache_info(Aqua.test_ambiguities)).second).maxsize == 2
+            @test MemoizationKit.cache_stats(only(cache_info(Aqua.test_all)).second).maxsize == 3
+            @test MemoizationKit.cache_stats(only(cache_info(Aqua.test_ambiguities)).second).maxsize == 2
             # runtime settings still override preferences
             set_cache_size!(Aqua.test_all, 11)
-            @test Cached.cache_stats(only(cache_info(Aqua.test_all)).second).maxsize == 11
+            @test MemoizationKit.cache_stats(only(cache_info(Aqua.test_all)).second).maxsize == 11
         finally
-            delete_preferences!(Aqua, "Cached"; force = true)
+            delete_preferences!(Aqua, "MemoizationKit"; force = true)
         end
 
-        # functions outside packages only see Cached's section
-        @test Cached._package_section(fromcached) === nothing
+        # functions outside packages only see MemoizationKit's section
+        @test MemoizationKit._package_section(fromcached) === nothing
     end
 end
 with_private_preferences() do
@@ -95,24 +95,24 @@ with_private_preferences() do
         try
             # global section, including the compile-time container
             set_cache_preferences!(; maxsize = 123, container = "LRU")
-            @test load_preference(Cached, "maxsize") == 123
-            @test load_preference(Cached, "container") == "LRU"
+            @test load_preference(MemoizationKit, "maxsize") == 123
+            @test load_preference(MemoizationKit, "container") == "LRU"
             set_cache_preferences!(; maxsize = nothing, container = nothing)
-            @test !has_preference(Cached, "maxsize") && !has_preference(Cached, "container")
+            @test !has_preference(MemoizationKit, "maxsize") && !has_preference(MemoizationKit, "container")
 
             # package and function sections combine without clobbering each other
             set_cache_preferences!(Aqua.test_all; maxsize = 4)
             set_cache_preferences!(Aqua; measure = "bytes")
             set_cache_preferences!(Aqua.test_ambiguities; measure = "count")
-            section = load_preference(Aqua, "Cached")
+            section = load_preference(Aqua, "MemoizationKit")
             @test section == Dict(
                 "measure" => "bytes", "test_all" => Dict("maxsize" => 4),
                 "test_ambiguities" => Dict("measure" => "count")
             )
             @test resolve("test_all", Dict(), section) ==
-                (; maxsize = 4, by = Cached.cachesize)
+                (; maxsize = 4, by = MemoizationKit.cachesize)
             set_cache_preferences!(Aqua.test_all; maxsize = nothing) # empty sections are removed
-            @test !haskey(load_preference(Aqua, "Cached"), "test_all")
+            @test !haskey(load_preference(Aqua, "MemoizationKit"), "test_all")
 
             @test_throws ArgumentError set_cache_preferences!(Aqua; maxsize = -1)
             @test_throws ArgumentError set_cache_preferences!(Aqua; measure = "kilos")
@@ -120,8 +120,8 @@ with_private_preferences() do
             @test_throws ArgumentError set_cache_preferences!(Aqua; maxsise = 1)
             @test_throws ArgumentError set_cache_preferences!(x -> x; maxsize = 1) # not in a package
         finally
-            delete_preferences!(Aqua, "Cached"; force = true)
-            delete_preferences!(Cached, "maxsize", "container"; force = true)
+            delete_preferences!(Aqua, "MemoizationKit"; force = true)
+            delete_preferences!(MemoizationKit, "maxsize", "container"; force = true)
         end
     end
 end
@@ -130,39 +130,39 @@ struct Blob
     data::Vector{UInt8}
     meta::Vector{Int}
 end
-Cached.cachesize(b::Blob) = length(b.data)
+MemoizationKit.cachesize(b::Blob) = length(b.data)
 
 @cached blob(n::Int) = Blob(zeros(UInt8, n), collect(1:1000))
 
 @testset "cachesize can be overloaded" begin
-    @test Cached.cachesize([1, 2, 3]) == Base.summarysize([1, 2, 3])
-    set_cache_size!(blob, 100; by = Cached.cachesize)
+    @test MemoizationKit.cachesize([1, 2, 3]) == Base.summarysize([1, 2, 3])
+    set_cache_size!(blob, 100; by = MemoizationKit.cachesize)
     blob(40)
     blob(50)
     c = only(caches(blob))
-    @test Cached.cache_stats(c).currentsize == 90 # ignores `meta`, unlike summarysize
+    @test MemoizationKit.cache_stats(c).currentsize == 90 # ignores `meta`, unlike summarysize
     blob(20) # evicts one entry to fit
     @test length(c) == 2
 end
 
 
 @testset "container preference (compile time)" begin
-    @test Cached.DEFAULT_CONTAINER === ClockCache
+    @test MemoizationKit.DEFAULT_CONTAINER === ClockCache
     @test CacheStyle(sum, 1) === GlobalCache{ClockCache}() === GlobalCache()
     @test TaskLocalCache() === TaskLocalCache{ClockCache}()
 
-    # a fresh process with `container = "LRU"` in Cached's preferences
+    # a fresh process with `container = "LRU"` in MemoizationKit's preferences
     mktempdir() do env
         write(
             joinpath(env, "LocalPreferences.toml"),
-            "[Cached]\ncontainer = \"LRU\"\n"
+            "[MemoizationKit]\ncontainer = \"LRU\"\n"
         )
         code = """
         using Pkg
         Pkg.activate($(repr(env)); io = devnull)
-        Pkg.develop(path = $(repr(pkgdir(Cached))); io = devnull)
-        using Cached
-        print(Cached.CacheStyle(sum, 1) === GlobalCache{LRU}())
+        Pkg.develop(path = $(repr(pkgdir(MemoizationKit))); io = devnull)
+        using MemoizationKit
+        print(MemoizationKit.CacheStyle(sum, 1) === GlobalCache{LRU}())
         """
         cmd = addenv(
             `$(Base.julia_cmd()) --startup-file=no -e $code`,

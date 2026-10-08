@@ -1,6 +1,6 @@
 using Test
-using Cached
-using Cached: implementation
+using MemoizationKit
+using MemoizationKit: implementation
 
 const calls = Ref(0)
 counting(x) = (calls[] += 1; x)
@@ -43,20 +43,20 @@ end
 
 # same name in different modules
 module ClashA
-    using Cached
+    using MemoizationKit
     @cached f(x) = (:A, x)
 end
 module ClashB
-    using Cached
+    using MemoizationKit
     @cached f(x) = (:B, x)
 end
 
 # a module with a submodule, both owning cached functions
 module Outer
-    using Cached
+    using MemoizationKit
     @cached a(x) = x
     module Inner
-        using Cached
+        using MemoizationKit
         @cached b(x) = x
     end
 end
@@ -66,13 +66,13 @@ module Shared
     fusion(x) = x
 end
 module SectorsA
-    using Cached
+    using MemoizationKit
     import ..Shared
     struct IrrepA end
     @cached Shared.fusion(::IrrepA) = :A
 end
 module SectorsB
-    using Cached
+    using MemoizationKit
     import ..Shared
     struct IrrepB end
     @cached Shared.fusion(::IrrepB) = :B
@@ -81,24 +81,24 @@ end
 @cached fib(n::Int) = n <= 2 ? big(1) : fib(n - 1) + fib(n - 2)
 
 @cached nocache(x) = counting(x)
-Cached.CacheStyle(::typeof(nocache), x::String) = NoCache()
+MemoizationKit.CacheStyle(::typeof(nocache), x::String) = NoCache()
 
 @cached tasklocal(x) = counting(x)
-Cached.CacheStyle(::typeof(tasklocal), x::Int) = TaskLocalCache{LRU}()
-Cached.CacheStyle(::typeof(tasklocal), x::Symbol) = TaskLocalCache{Dict}()
-Cached.CacheStyle(::typeof(tasklocal), x::Float64) = TaskLocalCache() # default container
-Cached.CacheStyle(::typeof(tasklocal), x::String) = GlobalCache()
+MemoizationKit.CacheStyle(::typeof(tasklocal), x::Int) = TaskLocalCache{LRU}()
+MemoizationKit.CacheStyle(::typeof(tasklocal), x::Symbol) = TaskLocalCache{Dict}()
+MemoizationKit.CacheStyle(::typeof(tasklocal), x::Float64) = TaskLocalCache() # default container
+MemoizationKit.CacheStyle(::typeof(tasklocal), x::String) = GlobalCache()
 
 # Custom keys share entries while the implementations receive the original inputs.
 @cached keyshape(x::AbstractVector, n::Int = 2; offset = 0) = counting(n * length(x) + offset)
 @cached keyshape(x::Tuple, n::Int = 2; offset = 0) = counting(n * length(x) + offset)
-Cached.cachekey(::typeof(keyshape), x, n; offset) = (length(x), n, offset)
-Cached.cachekey(::typeof(keyshape), ::Vector{Nothing}, n; offset) = error("key hook must be bypassed")
+MemoizationKit.cachekey(::typeof(keyshape), x, n; offset) = (length(x), n, offset)
+MemoizationKit.cachekey(::typeof(keyshape), ::Vector{Nothing}, n; offset) = error("key hook must be bypassed")
 
 @cached wrapped(x) = counting(length(x))
-Cached.cachekey(::typeof(wrapped), x) =
+MemoizationKit.cachekey(::typeof(wrapped), x) =
     Hashed(x, (x, seed) -> hash(length(x), seed), (x, y) -> isequal(length(x), length(y)))
-Cached.CacheStyle(::typeof(wrapped), ::Tuple) = TaskLocalCache{Dict}()
+MemoizationKit.CacheStyle(::typeof(wrapped), ::Tuple) = TaskLocalCache{Dict}()
 keyallocs(f, x) = (f(x); @allocated f(x))
 
 @cached sized(x) = counting(x)
@@ -228,7 +228,7 @@ end
     @test isempty(cache_info(tasklocal))
     @test ncalls(() -> tasklocal("a")) == ("a", 1)
     @test ncalls(() -> tasklocal("a")) == ("a", 0)
-    @test only(caches(tasklocal)) isa Cached.DEFAULT_CONTAINER
+    @test only(caches(tasklocal)) isa MemoizationKit.DEFAULT_CONTAINER
     @test_throws ArgumentError GlobalCache{Dict}()
 end
 
@@ -247,7 +247,7 @@ end
     for i in 1:20
         sized(i)
     end
-    @test Cached.cache_stats(only(caches(sized))).currentsize == 100
+    @test MemoizationKit.cache_stats(only(caches(sized))).currentsize == 100
 
     # the limit is a budget for the function as a whole, all signatures together
     set_cache_size!(manytypes, 3)

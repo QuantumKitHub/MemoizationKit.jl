@@ -12,7 +12,7 @@
 #
 # `test/test_disk.jl` includes this file and calls `stress` on a temporary directory.
 
-using Cached
+using MemoizationKit
 using SQLite: SQLite
 
 const COMPUTED = Ref(0)
@@ -21,8 +21,8 @@ const COMPUTED = Ref(0)
 # preference, added to the load path.
 function use_disk_path(dir)
     env = mktempdir()
-    write(joinpath(env, "Project.toml"), "[deps]\nCached = \"$(Base.PkgId(Cached).uuid)\"\n")
-    write(joinpath(env, "LocalPreferences.toml"), "[Cached]\ndisk_path = $(repr(dir))\n")
+    write(joinpath(env, "Project.toml"), "[deps]\nMemoizationKit = \"$(Base.PkgId(MemoizationKit).uuid)\"\n")
+    write(joinpath(env, "LocalPreferences.toml"), "[MemoizationKit]\ndisk_path = $(repr(dir))\n")
     push!(LOAD_PATH, env)
     return env
 end
@@ -31,8 +31,8 @@ end
 stress_expected(k) = [sin(k * i) for i in 1:(64 + 37k % 512)]
 
 @cached stress_value(k::Int)::Vector{Float64} = (COMPUTED[] += 1; stress_expected(k))
-Cached.CacheStyle(::typeof(stress_value), ::Int) = NoCache()
-Cached.DiskCacheStyle(::typeof(stress_value), ::Int) = DiskCache()
+MemoizationKit.CacheStyle(::typeof(stress_value), ::Int) = NoCache()
+MemoizationKit.DiskCacheStyle(::typeof(stress_value), ::Int) = DiskCache()
 
 # Every key three times, in an order that depends on `seed`.
 function stress_worker(dir, nkeys, seed)

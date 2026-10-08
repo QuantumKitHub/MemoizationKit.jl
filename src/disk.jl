@@ -1,5 +1,5 @@
 # Disk caching, a level below the RAM caches (see `docs/src/disk.md`). The core holds the API;
-# the stores are implemented by the SQLite extension, `ext/CachedSQLiteExt.jl`.
+# the stores are implemented by the SQLite extension, `ext/MemoizationKitSQLiteExt.jl`.
 
 """
     DiskCacheStyle(f, args...)
@@ -10,7 +10,7 @@ The disk caching strategy for the call `f(args...)` of a [`@cached`](@ref) funct
 `CacheStyle` is `NoCache()`.
 
 ```julia
-Cached.DiskCacheStyle(::typeof(f), args...) = DiskCache()
+MemoizationKit.DiskCacheStyle(::typeof(f), args...) = DiskCache()
 ```
 """
 DiskCacheStyle(f, args...) = NoCache()
@@ -32,7 +32,7 @@ end
 DiskCache(; serializer::Type = Serializer) = DiskCache{serializer}()
 
 """
-    Cached.diskversion(f) -> String
+    MemoizationKit.diskversion(f) -> String
 
 Version of the disk cache of `f`, part of its file name; `"1"` by default. Change it when the
 stored results of `f` are no longer valid, or no longer readable (e.g. after a Julia update).
@@ -40,7 +40,7 @@ stored results of `f` are no longer valid, or no longer readable (e.g. after a J
 diskversion(f) = "1"
 
 """
-    Cached.disk_artifact(f) -> Union{Nothing, String}
+    MemoizationKit.disk_artifact(f) -> Union{Nothing, String}
 
 A directory with a read-only disk cache of `f`, made by [`export_disk_cache`](@ref), that is
 consulted before the cache of the node, e.g. `artifact"results"`. Defaults to `nothing`.
@@ -83,7 +83,7 @@ that have been used in this process, as `f => (; path, entries, bytes)` pairs.
 function disk_cache_info end
 
 """
-    Cached.disk_cache_stats() -> Vector{Pair{Any, NamedTuple}}
+    MemoizationKit.disk_cache_stats() -> Vector{Pair{Any, NamedTuple}}
 
 The disk lookups in this process of each function whose disk cache is open, as
 `f => (; hits, misses)` pairs, where a hit is a result read from disk (from the artifact or
@@ -105,6 +105,6 @@ function empty_disk_caches! end
     export_disk_cache(f, dir) -> String
 
 Write the disk cache of `f` on this node into `dir`, as a compact read-only database named as
-[`Cached.disk_artifact`](@ref) expects it, and return its path.
+[`MemoizationKit.disk_artifact`](@ref) expects it, and return its path.
 """
 function export_disk_cache end
