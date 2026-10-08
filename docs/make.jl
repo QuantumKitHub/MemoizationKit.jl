@@ -8,7 +8,7 @@ makedocs(;
     authors = "Lukas Devos",
     sitename = "MemoizationKit.jl",
     format = Documenter.HTML(;
-        canonical = "https://lkdvos.github.io/MemoizationKit.jl",
+        canonical = "https://quantumkithub.github.io/MemoizationKit.jl",
         edit_link = "main",
         assets = String[],
     ),
@@ -31,4 +31,4 @@ makedocs(;
     ],
 )
 
-deploydocs(; repo = "github.com/lkdvos/MemoizationKit.jl", devbranch = "main", push_preview = true)
+deploydocs(; repo = "github.com/QuantumKitHub/MemoizationKit.jl", devbranch = "main", push_preview = true)

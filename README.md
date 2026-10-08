@@ -1,9 +1,9 @@
 # MemoizationKit.jl
 
-[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://lkdvos.github.io/MemoizationKit.jl/stable/)
-[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://lkdvos.github.io/MemoizationKit.jl/dev/)
-[![Build Status](https://github.com/lkdvos/MemoizationKit.jl/actions/workflows/Tests.yml/badge.svg?branch=main)](https://github.com/lkdvos/MemoizationKit.jl/actions/workflows/Tests.yml?query=branch%3Amain)
-[![Coverage](https://codecov.io/gh/lkdvos/MemoizationKit.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/lkdvos/MemoizationKit.jl)
+[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://quantumkithub.github.io/MemoizationKit.jl/stable/)
+[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://quantumkithub.github.io/MemoizationKit.jl/dev/)
+[![Build Status](https://github.com/QuantumKitHub/MemoizationKit.jl/actions/workflows/Tests.yml/badge.svg?branch=main)](https://github.com/QuantumKitHub/MemoizationKit.jl/actions/workflows/Tests.yml?query=branch%3Amain)
+[![Coverage](https://codecov.io/gh/QuantumKitHub/MemoizationKit.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/QuantumKitHub/MemoizationKit.jl)
 [![Code Style: Runic](https://img.shields.io/badge/code_style-%F0%9F%AA%A8_Runic-9558B2)](https://github.com/fredrikekre/Runic.jl)
 [![Aqua](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
 
@@ -42,7 +42,7 @@ fib(200) # new results are kept in RAM and on disk
 
 Calls look in RAM, then on disk, before computing.
 Processes on the same machine share the database.
-You control result versions and disk cleanup; see [disk caching](https://lkdvos.github.io/MemoizationKit.jl/dev/disk/).
+You control result versions and disk cleanup; see [disk caching](https://quantumkithub.github.io/MemoizationKit.jl/dev/disk/).
 
 ## See what your caches are doing
 
@@ -63,14 +63,14 @@ The dashboard shows recent hit rates, storage use, and activity, with separate R
  ⇥ tab  ↑↓ select  ⏎ resize  e empty  s sort  / filter  q quit
 ```
 
-See the [dashboard guide](https://lkdvos.github.io/MemoizationKit.jl/dev/dashboard/) for controls and statistics.
+See the [dashboard guide](https://quantumkithub.github.io/MemoizationKit.jl/dev/dashboard/) for controls and statistics.
 
 ## Why MemoizationKit?
 
 Choose MemoizationKit when memoization needs ongoing management: memory limits, reuse across runs, or visibility into a running workload.
 It brings these tools together with strategies chosen by function and argument type.
 For a single in-memory cache, Memoize.jl or Memoization.jl with an LRU container may already cover your needs.
-See [the comparison and tradeoffs](https://lkdvos.github.io/MemoizationKit.jl/dev/#why-memoizationkit).
+See [the comparison and tradeoffs](https://quantumkithub.github.io/MemoizationKit.jl/dev/#why-memoizationkit).
 
 Requires Julia 1.10 or later.
-Start with [usage](https://lkdvos.github.io/MemoizationKit.jl/dev/#usage), [configuration](https://lkdvos.github.io/MemoizationKit.jl/dev/configuration/), or [timing](https://lkdvos.github.io/MemoizationKit.jl/dev/timing/) in the [documentation](https://lkdvos.github.io/MemoizationKit.jl/dev/).
+Start with [usage](https://quantumkithub.github.io/MemoizationKit.jl/dev/#usage), [configuration](https://quantumkithub.github.io/MemoizationKit.jl/dev/configuration/), or [timing](https://quantumkithub.github.io/MemoizationKit.jl/dev/timing/) in the [documentation](https://quantumkithub.github.io/MemoizationKit.jl/dev/).
