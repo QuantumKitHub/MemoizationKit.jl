@@ -34,7 +34,7 @@ jobs:
           script: |
             const marker = '<!-- memoizationkit-docs-preview -->';
             const issue_number = context.issue.number;
-            const url = `https://lkdvos.github.io/MemoizationKit.jl/previews/PR${issue_number}/`;
+            const url = `https://quantumkithub.github.io/MemoizationKit.jl/previews/PR${issue_number}/`;
             const body = `${marker}\n[Preview the documentation](${url})`;
             const comments = await github.paginate(github.rest.issues.listComments, {
               ...context.repo,
