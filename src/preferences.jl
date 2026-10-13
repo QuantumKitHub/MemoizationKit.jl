@@ -2,7 +2,7 @@
 #
 # Settings are resolved once per function, when its first cache is created:
 #     runtime calls (`set_cache_size!`, ...) > [<Package>.MemoizationKit.<function>] > [<Package>.MemoizationKit]
-#         > [MemoizationKit] > built-in defaults
+#         > default_cache_settings(f) > [MemoizationKit] > built-in defaults
 # where <Package> is the package that owns the function (`parentmodule(typeof(f))`).
 # The default container is a compile-time preference of MemoizationKit only, since it selects the
 # `CacheStyle` and so must be a constant.
@@ -24,6 +24,24 @@ cachesize(x) = Base.summarysize(x)
 
 const MEASURES = Dict{String, Any}("count" => nothing, "bytes" => cachesize)
 
+"""
+    MemoizationKit.default_cache_settings(f) -> NamedTuple
+
+Default cache settings of `f` provided by the package that defines its cached methods, e.g. a
+smaller limit for values that hold scarce memory. They take precedence over the built-in defaults
+and the `[MemoizationKit]` preferences, but the preferences of the package that owns `f` and of
+`f` itself override them. Defaults to `(;)`, no settings. Settings are `maxsize`, `measure`
+(`"count"` or `"bytes"`), `disk` and `disk_path`, as for [`set_cache_preferences!`](@ref).
+
+```julia
+MemoizationKit.default_cache_settings(::typeof(device_kernel)) = (; measure = "bytes", maxsize = 2^28)
+```
+
+Settings are read when the first cache of `f` is created, so define this method in the same
+package (or extension) as the cached methods of `f`.
+"""
+default_cache_settings(f) = (;)
+
 const DEFAULT_CONTAINER = let name = @load_preference("container", "ClockCache")
     containers = Dict("ClockCache" => ClockCache, "LRU" => LRU)
     haskey(containers, name) ||
@@ -31,11 +49,16 @@ const DEFAULT_CONTAINER = let name = @load_preference("container", "ClockCache")
     containers[name]
 end
 
-# Resolve settings from the preference sections, most general first. `package` is the
-# `[<Package>.MemoizationKit]` table (or `nothing`), whose sub-tables are per-function sections.
-function _resolve_settings(fname::AbstractString, cached::AbstractDict, package)
+# Resolve settings from the preference sections and the package defaults, most general first.
+# `defaults` is `default_cache_settings(f)`, and `package` the `[<Package>.MemoizationKit]` table
+# (or `nothing`), whose sub-tables are per-function sections.
+function _resolve_settings(fname::AbstractString, cached::AbstractDict, defaults, package)
     settings = Dict{String, Any}(string(k) => v for (k, v) in pairs(BUILTIN_SETTINGS))
     _merge_settings!(settings, cached, "[MemoizationKit]")
+    _merge_settings!(
+        settings, Dict{String, Any}(string(k) => v for (k, v) in pairs(defaults)),
+        "default_cache_settings(::typeof($fname))"
+    )
     if package isa AbstractDict
         _merge_settings!(settings, package, "[<package>.MemoizationKit]")
         section = get(package, fname, nothing)
@@ -53,9 +76,9 @@ function _merge_settings!(settings, section::AbstractDict, where)
     for (k, v) in section
         v isa AbstractDict && continue # per-function section
         if !(k in SETTING_KEYS)
-            @warn "MemoizationKit: ignoring unknown preference `$k` in $where"
+            @warn "MemoizationKit: ignoring unknown setting `$k` in $where"
         elseif !_isvalid(k, v)
-            @warn "MemoizationKit: ignoring invalid preference `$k = $(repr(v))` in $where"
+            @warn "MemoizationKit: ignoring invalid setting `$k = $(repr(v))` in $where"
         else
             settings[k] = v
         end
@@ -82,8 +105,10 @@ end
 
 _fname(f) = string(f isa Function ? nameof(f) : nameof(typeof(f)))
 
+_settings(f) = _resolve_settings(_fname(f), _cached_section(), default_cache_settings(f), _package_section(f))
+
 function FunctionCaches(f)
-    s = _resolve_settings(_fname(f), _cached_section(), _package_section(f))
+    s = _settings(f)
     return FunctionCaches(s.maxsize, s.by, AbstractCache[])
 end
 

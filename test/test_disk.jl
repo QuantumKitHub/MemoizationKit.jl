@@ -188,8 +188,8 @@ MemoizationKit.DiskCacheStyle(::Union{typeof(prefoff), typeof(prefpath), typeof(
 
 @testset "preferences, and disk errors" begin
     package = Dict{String, Any}("disk_path" => "/x", "f" => Dict{String, Any}("disk" => false))
-    @test MemoizationKit._resolve_settings("f", Dict{String, Any}("disk" => true), package)[(:disk, :disk_path)] == (; disk = false, disk_path = "/x")
-    @test (@test_logs (:warn, r"invalid preference `disk = 1`") MemoizationKit._resolve_settings("f", Dict{String, Any}("disk" => 1), nothing)).disk
+    @test MemoizationKit._resolve_settings("f", Dict{String, Any}("disk" => true), (;), package)[(:disk, :disk_path)] == (; disk = false, disk_path = "/x")
+    @test (@test_logs (:warn, r"invalid setting `disk = 1`") MemoizationKit._resolve_settings("f", Dict{String, Any}("disk" => 1), (;), nothing)).disk
     @test_throws ArgumentError set_cache_preferences!(; disk = 1)
 
     # in a private project, as in `test_preferences.jl`; it comes before `DIR` on the load path

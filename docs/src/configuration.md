@@ -23,8 +23,9 @@ Settings are looked up per function, in this order (first match wins):
 1. runtime calls: [`set_cache_size!`](@ref);
 2. the function's own section, `[<Package>.MemoizationKit.<function>]`;
 3. the section of the package that owns the function, `[<Package>.MemoizationKit]`;
-4. MemoizationKit's own section, `[MemoizationKit]`;
-5. the built-in defaults above.
+4. defaults provided by the package's code, [`MemoizationKit.default_cache_settings`](@ref);
+5. MemoizationKit's own section, `[MemoizationKit]`;
+6. the built-in defaults above.
 
 The package that owns a function is the package of the module that defines it, `parentmodule(typeof(f))`.
 For a function extended by several packages, that is the package that defines the function, not the ones that add cached methods to it.
@@ -44,6 +45,19 @@ maxsize = 2_000_000_000
 ```
 
 Unknown keys and invalid values are ignored with a warning.
+
+## Package defaults
+
+A package can ship defaults for its own functions by overloading [`MemoizationKit.default_cache_settings`](@ref), instead of writing preferences on load or calling [`set_cache_size!`](@ref) from `__init__`:
+
+```julia
+MemoizationKit.default_cache_settings(::typeof(device_kernel)) = (; measure = "bytes", maxsize = 2^28)
+```
+
+These defaults take precedence over the global `[MemoizationKit]` section, which is not specific to the package, so a generic limit does not override a smaller one the package chose, e.g. for values holding device memory.
+The package's own sections, `[<Package>.MemoizationKit]` and `[<Package>.MemoizationKit.<function>]`, still override them.
+For several functions at once, define the method for a union, e.g. `::Union{typeof(f), typeof(g)}`.
+Like preferences, the defaults are read when a function's first cache is created, so define the method in the same package or extension as the cached methods.
 
 ## When changes take effect
 
