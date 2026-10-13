@@ -38,7 +38,8 @@ MemoizationKit.default_cache_settings(::typeof(device_kernel)) = (; measure = "b
 ```
 
 Settings are read when the first cache of `f` is created, so define this method in the same
-package (or extension) as the cached methods of `f`.
+package (or extension) as the cached methods of `f`. Unknown or invalid settings throw an
+`ArgumentError` from that call.
 """
 default_cache_settings(f) = (;)
 
@@ -51,14 +52,21 @@ end
 
 # Resolve settings from the preference sections and the package defaults, most general first.
 # `defaults` is `default_cache_settings(f)`, and `package` the `[<Package>.MemoizationKit]` table
-# (or `nothing`), whose sub-tables are per-function sections.
+# (or `nothing`), whose sub-tables are per-function sections. Invalid preferences are ignored with
+# a warning, while invalid defaults are a bug of the package and throw.
 function _resolve_settings(fname::AbstractString, cached::AbstractDict, defaults, package)
     settings = Dict{String, Any}(string(k) => v for (k, v) in pairs(BUILTIN_SETTINGS))
     _merge_settings!(settings, cached, "[MemoizationKit]")
-    _merge_settings!(
-        settings, Dict{String, Any}(string(k) => v for (k, v) in pairs(defaults)),
-        "default_cache_settings(::typeof($fname))"
-    )
+    for (k, v) in pairs(defaults)
+        k = string(k)
+        k in SETTING_KEYS && _isvalid(k, v) || throw(
+            ArgumentError(
+                "$(k in SETTING_KEYS ? "invalid" : "unknown") cache setting `$k = $(repr(v))` " *
+                    "in `MemoizationKit.default_cache_settings(::typeof($fname))`"
+            )
+        )
+        settings[k] = v
+    end
     if package isa AbstractDict
         _merge_settings!(settings, package, "[<package>.MemoizationKit]")
         section = get(package, fname, nothing)

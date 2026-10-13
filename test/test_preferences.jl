@@ -29,10 +29,14 @@ end
         s = @test_logs (:warn, msg) resolve("f", section, (;), nothing)
         @test s == resolve("f", Dict(), (;), nothing)
     end
-    s = @test_logs (:warn, r"invalid setting `measure = :bytes` in default_cache_settings\(::typeof\(f\)\)") resolve(
+end
+
+@testset "invalid package defaults throw" begin
+    @test_throws r"invalid cache setting `measure = :bytes`.*default_cache_settings\(::typeof\(f\)\)" resolve(
         "f", Dict(), (; measure = :bytes), nothing
     )
-    @test s == resolve("f", Dict(), (;), nothing)
+    @test_throws r"unknown cache setting `maxsise = 1`" resolve("f", Dict(), (; maxsise = 1), nothing)
+    @test_throws ArgumentError resolve("f", Dict(), (; container = "LRU"), nothing) # global only
 end
 
 struct Key
@@ -45,6 +49,8 @@ end
 @cached Aqua.test_ambiguities(k::Key) = k.x
 @cached Aqua.test_unbound_args(k::Key) = k.x
 MemoizationKit.default_cache_settings(::typeof(Aqua.test_unbound_args)) = (; maxsize = 6)
+@cached Aqua.test_undefined_exports(k::Key) = k.x
+MemoizationKit.default_cache_settings(::typeof(Aqua.test_undefined_exports)) = (; maxsize = -1)
 
 # Preferences are written next to the active project. Point it at a private temporary project
 # while writing them, so that test files running in parallel never see them.
@@ -105,6 +111,10 @@ with_private_preferences() do
         finally
             delete_preferences!(MemoizationKit, "maxsize"; force = true)
         end
+
+        # invalid package defaults fail the call, every time
+        @test_throws ArgumentError Aqua.test_undefined_exports(Key(1))
+        @test_throws ArgumentError Aqua.test_undefined_exports(Key(1))
 
         # functions outside packages only see MemoizationKit's section
         @test MemoizationKit._package_section(fromcached) === nothing
