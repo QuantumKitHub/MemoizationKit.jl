@@ -68,7 +68,7 @@ end
 # The slot of `key` in `c`, or 0.
 _slot(c::SlotCache, key) = (p = _probe(c, key); p === nothing ? 0 : get(c.slots.index, p, 0))
 
-_entrysize(s::Slots, v) = s.by === nothing ? 1 : Int(s.by(v))::Int
+_entrysize(c, v) = c.by === nothing ? 1 : Int(c.by(v))::Int # `c` is a `Slots` or a `ClockCache`
 
 # Insert a new key (not currently present), evicting until it fits.
 # Values larger than the whole cache are not stored.

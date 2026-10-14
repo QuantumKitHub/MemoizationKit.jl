@@ -1,5 +1,6 @@
 [deps]
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
+InteractiveUtils = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
 MemoizationKit = "1b238080-9255-4fe9-b224-89eb24efe93b"
 ParallelTestRunner = "d3525ed8-44d0-4b2c-a655-542cee43accc"
 Preferences = "21216c6a-2e73-6563-6e65-726566657250"
@@ -15,6 +16,7 @@ MemoizationKit = {path = ".."}
 
 [compat]
 Aqua = "0.8.9"
+InteractiveUtils = "1.10"
 ParallelTestRunner = "2.2.0"
 Random = "1.10"
 SQLite = "1.6"

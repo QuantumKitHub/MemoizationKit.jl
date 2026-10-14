@@ -1,5 +1,6 @@
 using Test
 using Random
+using InteractiveUtils: code_llvm
 using MemoizationKit
 using MemoizationKit: cache_stats, LocalClockCache
 
@@ -96,6 +97,16 @@ end
     end
     @test ok[]
     @test all(((k, v),) -> isequal(v, expected(k)), c)
+end
+
+# Without `AtomicMemory`, lock-free readers rely on `setindex!` into a `Vector{Any}` compiling to
+# a release store with a GC write barrier.
+if VERSION < v"1.12"
+    @testset "ClockCache: slot stores are release stores" begin
+        ir = sprint(code_llvm, MemoizationKit.storeslot!, (Vector{Any}, Int, Any))
+        @test occursin(r"store atomic .* release", ir)
+        @test occursin("gc_queue_root", ir)
+    end
 end
 
 @cached shared(x::Int) = x^2
