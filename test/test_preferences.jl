@@ -7,25 +7,36 @@ resolve(args...) = MemoizationKit._resolve_settings(args...)[(:maxsize, :by)] # 
 caches(f) = last.(cache_info(f))
 
 @testset "resolution order" begin
-    @test resolve("f", Dict(), nothing) == (; maxsize = 10_000, by = nothing)
+    @test resolve("f", Dict(), (;), nothing) == (; maxsize = 10_000, by = nothing)
     cached = Dict{String, Any}("maxsize" => 500)
-    @test resolve("f", cached, nothing) == (; maxsize = 500, by = nothing)
-    package = Dict{String, Any}("maxsize" => 50, "measure" => "bytes", "g" => Dict{String, Any}("maxsize" => 5))
-    @test resolve("f", cached, package) == (; maxsize = 50, by = MemoizationKit.cachesize)
-    @test resolve("g", cached, package) == (; maxsize = 5, by = MemoizationKit.cachesize)
+    @test resolve("f", cached, (;), nothing) == (; maxsize = 500, by = nothing)
+    # package defaults override MemoizationKit's section, but not the package's sections
+    defaults = (; maxsize = 100, measure = "bytes")
+    @test resolve("f", cached, defaults, nothing) == (; maxsize = 100, by = MemoizationKit.cachesize)
+    package = Dict{String, Any}("maxsize" => 50, "g" => Dict{String, Any}("maxsize" => 5, "measure" => "count"))
+    @test resolve("f", cached, defaults, package) == (; maxsize = 50, by = MemoizationKit.cachesize)
+    @test resolve("g", cached, defaults, package) == (; maxsize = 5, by = nothing)
 end
 
-@testset "invalid preferences are ignored with a warning" begin
+@testset "invalid settings are ignored with a warning" begin
     for (section, msg) in (
-            Dict{String, Any}("maxsise" => 1) => r"unknown preference `maxsise`",
-            Dict{String, Any}("maxsize" => -1) => r"invalid preference `maxsize = -1`",
-            Dict{String, Any}("maxsize" => true) => r"invalid preference `maxsize = true`",
-            Dict{String, Any}("maxsubcaches" => 2) => r"unknown preference `maxsubcaches`", # removed setting
-            Dict{String, Any}("measure" => "kilos") => r"invalid preference `measure = \"kilos\"`",
+            Dict{String, Any}("maxsise" => 1) => r"unknown setting `maxsise`",
+            Dict{String, Any}("maxsize" => -1) => r"invalid setting `maxsize = -1`",
+            Dict{String, Any}("maxsize" => true) => r"invalid setting `maxsize = true`",
+            Dict{String, Any}("maxsubcaches" => 2) => r"unknown setting `maxsubcaches`", # removed setting
+            Dict{String, Any}("measure" => "kilos") => r"invalid setting `measure = \"kilos\"`",
         )
-        s = @test_logs (:warn, msg) resolve("f", section, nothing)
-        @test s == resolve("f", Dict(), nothing)
+        s = @test_logs (:warn, msg) resolve("f", section, (;), nothing)
+        @test s == resolve("f", Dict(), (;), nothing)
     end
+end
+
+@testset "invalid package defaults throw" begin
+    @test_throws r"invalid cache setting `measure = :bytes`.*default_cache_settings\(::typeof\(f\)\)" resolve(
+        "f", Dict(), (; measure = :bytes), nothing
+    )
+    @test_throws r"unknown cache setting `maxsise = 1`" resolve("f", Dict(), (; maxsise = 1), nothing)
+    @test_throws ArgumentError resolve("f", Dict(), (; container = "LRU"), nothing) # global only
 end
 
 struct Key
@@ -36,6 +47,10 @@ end
 @cached fromcached(x) = x
 @cached Aqua.test_all(k::Key) = k.x
 @cached Aqua.test_ambiguities(k::Key) = k.x
+@cached Aqua.test_unbound_args(k::Key) = k.x
+MemoizationKit.default_cache_settings(::typeof(Aqua.test_unbound_args)) = (; maxsize = 6)
+@cached Aqua.test_undefined_exports(k::Key) = k.x
+MemoizationKit.default_cache_settings(::typeof(Aqua.test_undefined_exports)) = (; maxsize = -1)
 
 # Preferences are written next to the active project. Point it at a private temporary project
 # while writing them, so that test files running in parallel never see them.
@@ -79,12 +94,27 @@ with_private_preferences() do
             Aqua.test_ambiguities(Key(1))
             @test MemoizationKit.cache_stats(only(cache_info(Aqua.test_all)).second).maxsize == 3
             @test MemoizationKit.cache_stats(only(cache_info(Aqua.test_ambiguities)).second).maxsize == 2
+            # package defaults override MemoizationKit's section, the package's section overrides them
+            @test MemoizationKit._settings(Aqua.test_unbound_args).maxsize == 3
             # runtime settings still override preferences
             set_cache_size!(Aqua.test_all, 11)
             @test MemoizationKit.cache_stats(only(cache_info(Aqua.test_all)).second).maxsize == 11
         finally
             delete_preferences!(Aqua, "MemoizationKit"; force = true)
         end
+
+        # package defaults apply without preferences, and take precedence over MemoizationKit's section
+        set_preferences!(MemoizationKit, "maxsize" => 7; force = true)
+        try
+            Aqua.test_unbound_args(Key(1))
+            @test MemoizationKit.cache_stats(only(cache_info(Aqua.test_unbound_args)).second).maxsize == 6
+        finally
+            delete_preferences!(MemoizationKit, "maxsize"; force = true)
+        end
+
+        # invalid package defaults fail the call, every time
+        @test_throws ArgumentError Aqua.test_undefined_exports(Key(1))
+        @test_throws ArgumentError Aqua.test_undefined_exports(Key(1))
 
         # functions outside packages only see MemoizationKit's section
         @test MemoizationKit._package_section(fromcached) === nothing
@@ -109,7 +139,7 @@ with_private_preferences() do
                 "measure" => "bytes", "test_all" => Dict("maxsize" => 4),
                 "test_ambiguities" => Dict("measure" => "count")
             )
-            @test resolve("test_all", Dict(), section) ==
+            @test resolve("test_all", Dict(), (;), section) ==
                 (; maxsize = 4, by = MemoizationKit.cachesize)
             set_cache_preferences!(Aqua.test_all; maxsize = nothing) # empty sections are removed
             @test !haskey(load_preference(Aqua, "MemoizationKit"), "test_all")

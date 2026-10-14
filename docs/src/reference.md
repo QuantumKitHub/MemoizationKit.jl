@@ -49,6 +49,7 @@ empty_caches!
 set_cache_size!
 set_cache_preferences!
 MemoizationKit.cachesize
+MemoizationKit.default_cache_settings
 cache_dashboard
 ```
 

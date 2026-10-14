@@ -6,7 +6,7 @@ module MemoizationKitSQLiteExt
 # give across nodes. Disk errors never fail a call: they warn once and the call goes on.
 
 using MemoizationKit: MemoizationKit, DiskCache, _compute, _fname, _owner, _ispackage, _within, instrument,
-    _resolve_settings, _cached_section, _package_section, get_scratch!, sha256
+    _settings, get_scratch!, sha256
 using SQLite: SQLite, DBInterface
 using Serialization: serialize, deserialize, writeheader
 
@@ -104,7 +104,7 @@ function stores(f::F) where {F}
 end
 
 function open_stores(f)
-    settings = _resolve_settings(_fname(f), _cached_section(), _package_section(f))
+    settings = _settings(f)
     settings.disk || return Stores(f, nothing, nothing)
     dir = MemoizationKit.disk_artifact(f)
     artifact = dir === nothing ? nothing : attempt(() -> Store(joinpath(dir, storename(f) * ".sqlite"); immutable = true), "open the disk artifact of `$(_fname(f))` in $dir")
