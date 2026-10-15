@@ -67,18 +67,18 @@ mutable struct ClockCache{K, V} <: AbstractCache{K, V}
     const by::Any
     const counts::Vector{Int} # hits and misses per thread, see `countlookup!`
     const lock::ReentrantLock
+
+    function ClockCache{K, V}(; maxsize::Integer = 10_000, by = nothing) where {K, V}
+        maxsize >= 0 || throw(ArgumentError("maxsize must be non-negative"))
+        counts = zeros(Int, 8 * Threads.maxthreadid())
+        return new{K, V}(emptytable(), 0, Union{Nothing, Entry{K, V}}[], Int[], 0, 0, 0, maxsize, by, counts, ReentrantLock())
+    end
 end
 
 function emptytable(n::Int = 16)
     t = SlotTable(undef, n)
     foreach(i -> storeslot!(t, i, nothing), 1:n)
     return t
-end
-
-function ClockCache{K, V}(; maxsize::Integer = 10_000, by = nothing) where {K, V}
-    maxsize >= 0 || throw(ArgumentError("maxsize must be non-negative"))
-    counts = zeros(Int, 8 * Threads.maxthreadid())
-    return ClockCache{K, V}(emptytable(), 0, Union{Nothing, Entry{K, V}}[], Int[], 0, 0, 0, maxsize, by, counts, ReentrantLock())
 end
 
 # Slot indices run from 1 to `length(t)`, a power of two; the probe for `hash` starts at
