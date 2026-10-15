@@ -70,7 +70,7 @@ mutable struct ClockCache{K, V} <: AbstractCache{K, V}
 
     function ClockCache{K, V}(; maxsize::Integer = 10_000, by = nothing) where {K, V}
         maxsize >= 0 || throw(ArgumentError("maxsize must be non-negative"))
-        counts = zeros(Int, 8 * Threads.maxthreadid())
+        counts = zeros(Int, 8 * nextpow(2, Threads.maxthreadid()))
         return new{K, V}(emptytable(), 0, Union{Nothing, Entry{K, V}}[], Int[], 0, 0, 0, maxsize, by, counts, ReentrantLock())
     end
 end
@@ -106,13 +106,14 @@ end
 end
 
 # Hits and misses are counted per thread, a cache line (8 `Int`s) apart, since a shared counter
-# would bounce between cores on every hit. Two tasks on one thread cannot interleave between the
-# load and the store, since neither yields; threads adopted after the cache was created share
+# would bounce between cores on every hit. There is a power of two of such lines, so a thread
+# finds its own without a division. Two tasks on one thread cannot interleave between the load
+# and the store, since neither yields; threads adopted after the cache was created share
 # counters, and may then lose a few counts.
-const HIT, MISS = 1, 2
-@inline function countlookup!(c::ClockCache, kind::Int)
+@enum LookupOutcome HIT = 1 MISS = 2
+@inline function countlookup!(c::ClockCache, outcome::LookupOutcome)
     counts = c.counts
-    i = 8 * mod(Threads.threadid() - 1, length(counts) ÷ 8) + kind
+    i = 8 * ((Threads.threadid() - 1) & (length(counts) ÷ 8 - 1)) + Int(outcome)
     GC.@preserve counts begin
         p = pointer(counts, i)
         unsafe_store!(p, unsafe_load(p, :monotonic) + 1, :monotonic)
@@ -220,7 +221,7 @@ function evict!(c::ClockCache)
     n = length(c.ring)
     steps = 0
     while true
-        c.hand = c.hand % n + 1
+        c.hand = c.hand >= n ? 1 : c.hand + 1
         steps += 1
         e = c.ring[c.hand]
         e === nothing && continue
@@ -273,7 +274,7 @@ end
 
 function cache_stats(c::ClockCache)
     counts = c.counts
-    total(kind) = GC.@preserve counts sum(i -> unsafe_load(pointer(counts, i), :monotonic), kind:8:length(counts))
+    total(outcome) = GC.@preserve counts sum(i -> unsafe_load(pointer(counts, i), :monotonic), Int(outcome):8:length(counts))
     return @lock c.lock (; hits = total(HIT), misses = total(MISS), length = c.count, c.currentsize, c.maxsize, c.by)
 end
 
