@@ -190,7 +190,7 @@ function removeentry!(c::ClockCache, e::Entry)
     else
         storeslot!(t, i, TOMBSTONE)
     end
-    Base._unsetindex!(c.ring, e.position) # internal, but without the fallback of `_unset!`: `isassigned` must be exact
+    Base._unsetindex!(c.ring, e.position) # internal
     push!(c.freepositions, e.position)
     c.count -= 1
     c.currentsize -= e.size

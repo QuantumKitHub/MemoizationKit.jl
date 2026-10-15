@@ -106,24 +106,16 @@ function _insert!(c::SlotCache, p::Key, v, sz::Int)
 end
 
 # Free slot `i`: drop it from the index and clear its key and value so they can be
-# garbage-collected while the slot sits on the free list.
+# garbage-collected while the slot sits on the free list (`Base._unsetindex!` is internal).
 function _free!(c::SlotCache, i::Int)
     forget!(c, i)
     s = c.slots
     delete!(s.index, s.keys[i])
-    _unset!(s.keys, i)
-    _unset!(s.vals, i)
+    Base._unsetindex!(s.keys, i)
+    Base._unsetindex!(s.vals, i)
     s.currentsize -= s.sizes[i]
     push!(s.free, i)
     return c
-end
-
-# `Base._unsetindex!` is internal, so fall back to keeping the reference if it ever disappears.
-function _unset!(v::Vector, i::Int)
-    @static if isdefined(Base, :_unsetindex!)
-        Base._unsetindex!(v, i)
-    end
-    return v
 end
 
 function Base.get!(default::Base.Callable, c::SlotCache{K, V}, key) where {K, V}
