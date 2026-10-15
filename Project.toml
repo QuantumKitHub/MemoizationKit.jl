@@ -1,6 +1,6 @@
 name = "MemoizationKit"
 uuid = "1b238080-9255-4fe9-b224-89eb24efe93b"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Lukas Devos <ldevos98@gmail.com> and contributors"]
 
 [workspace]
