@@ -12,10 +12,21 @@ Base.hash(k::Key, h::UInt) = hash(k.hash, h)
 Base.isequal(p::Key{K}, s::Key{Any}) where {K} = p.hash == s.hash && s.key isa K && isequal(p.key, s.key::K)
 Base.isequal(a::Key{Any}, b::Key{Any}) = a.hash == b.hash && typeof(a.key) === typeof(b.key) && isequal(a.key, b.key)
 
-# The shared implementation of `LRU` and `ClockCache`: every method of a dict-like
+# Caches that iterate over `snapshot(c)`, the entries copied under the lock, so that iteration is
+# safe while other tasks use the cache (holding the lock across `iterate` calls would deadlock on
+# an early `break`). The length may change meanwhile, so `collect` must not rely on it.
+abstract type DictCache{K, V} <: AbstractCache{K, V} end
+Base.IteratorSize(::Type{<:DictCache}) = Base.SizeUnknown()
+function Base.iterate(c::DictCache, (entries, i) = (snapshot(c), 1))
+    return i > length(entries) ? nothing : (entries[i], (entries, i + 1))
+end
+# The entries below the compact header.
+Base.show(io::IO, m::MIME"text/plain", c::DictCache) = invoke(show, Tuple{IO, MIME"text/plain", AbstractDict}, io, m, c)
+
+# The shared implementation of `LRU` and `LocalClockCache`: every method of a dict-like
 # `AbstractCache`, on the storage in the field `slots::Slots{V}`. The subtypes are eviction
 # policies over slot numbers, through the hooks below, which are called with the lock held.
-abstract type SlotCache{K, V} <: AbstractCache{K, V} end
+abstract type SlotCache{K, V} <: DictCache{K, V} end
 
 # The entries in numbered slots (reused once freed), the key index, the size accounting, the
 # statistics and the lock.
@@ -51,20 +62,24 @@ function victim end
 function forget! end
 
 # The probe for a key that is inserted: converted to `K`, which throws if that is not possible.
-_newkey(::SlotCache{K}, key) where {K} = Key(key isa K ? key : convert(K, key)::K)
+_newkey(::AbstractCache{K}, key) where {K} = Key(key isa K ? key : convert(K, key)::K)
 
-# The slot of `key` in `c`, or 0. A key that cannot be converted to `K` is not in the cache.
-function _slot(c::SlotCache{K}, key) where {K}
-    key isa K && return get(c.slots.index, Key(key), 0)
+# The probe for a key that is looked up, or `nothing`: a key that cannot be converted to `K` is
+# not in the cache.
+function _probe(::AbstractCache{K}, key) where {K}
+    key isa K && return Key(key)
     k = try
         convert(K, key)::K
     catch
-        return 0
+        return nothing
     end
-    return get(c.slots.index, Key(k), 0)
+    return Key(k)
 end
 
-_entrysize(s::Slots, v) = s.by === nothing ? 1 : Int(s.by(v))::Int
+# The slot of `key` in `c`, or 0.
+_slot(c::SlotCache, key) = (p = _probe(c, key); p === nothing ? 0 : get(c.slots.index, p, 0))
+
+_entrysize(c, v) = c.by === nothing ? 1 : Int(c.by(v))::Int # `c` is a `Slots` or a `ClockCache`
 
 # Insert a new key (not currently present), evicting until it fits.
 # Values larger than the whole cache are not stored.
@@ -91,24 +106,16 @@ function _insert!(c::SlotCache, p::Key, v, sz::Int)
 end
 
 # Free slot `i`: drop it from the index and clear its key and value so they can be
-# garbage-collected while the slot sits on the free list.
+# garbage-collected while the slot sits on the free list (`Base._unsetindex!` is internal).
 function _free!(c::SlotCache, i::Int)
     forget!(c, i)
     s = c.slots
     delete!(s.index, s.keys[i])
-    _unset!(s.keys, i)
-    _unset!(s.vals, i)
+    Base._unsetindex!(s.keys, i)
+    Base._unsetindex!(s.vals, i)
     s.currentsize -= s.sizes[i]
     push!(s.free, i)
     return c
-end
-
-# `Base._unsetindex!` is internal, so fall back to keeping the reference if it ever disappears.
-function _unset!(v::Vector, i::Int)
-    @static if isdefined(Base, :_unsetindex!)
-        Base._unsetindex!(v, i)
-    end
-    return v
 end
 
 function Base.get!(default::Base.Callable, c::SlotCache{K, V}, key) where {K, V}
@@ -141,30 +148,13 @@ function Base.get(c::SlotCache, key, default)
     end
 end
 
-function Base.getindex(c::SlotCache, key)
-    return @lock c.slots.lock begin
-        i = _slot(c, key)
-        i == 0 && throw(KeyError(key))
-        touch!(c, i)
-        c.slots.vals[i]
-    end
-end
-
 Base.haskey(c::SlotCache, key) = @lock c.slots.lock _slot(c, key) != 0
 Base.length(c::SlotCache) = @lock c.slots.lock length(c.slots.index)
 Base.isempty(c::SlotCache) = @lock c.slots.lock isempty(c.slots.index)
 
-# Iteration walks a snapshot copied under the lock, so it is safe while other tasks use the
-# cache (holding the lock across `iterate` calls would deadlock on an early `break`).
-# The length may change between `length` and `iterate`, so `collect` must not rely on it.
-Base.IteratorSize(::Type{<:SlotCache}) = Base.SizeUnknown()
-function Base.iterate(c::SlotCache{K, V}) where {K, V}
+function snapshot(c::SlotCache{K, V}) where {K, V}
     s = c.slots
-    snapshot = @lock s.lock Pair{K, V}[k.key::K => s.vals[i] for (k, i) in s.index]
-    return iterate(c, (snapshot, 1))
-end
-function Base.iterate(::SlotCache, (snapshot, i)::Tuple{Vector, Int})
-    return i > length(snapshot) ? nothing : (snapshot[i], (snapshot, i + 1))
+    return @lock s.lock Pair{K, V}[k.key::K => s.vals[i] for (k, i) in s.index]
 end
 
 function Base.setindex!(c::SlotCache{K, V}, v, key) where {K, V}
@@ -210,6 +200,3 @@ function cache_stats(c::SlotCache)
     s = c.slots
     return @lock s.lock (; s.hits, s.misses, length = length(s.index), s.currentsize, s.maxsize, s.by)
 end
-
-# The entries below the compact header.
-Base.show(io::IO, m::MIME"text/plain", c::SlotCache) = invoke(show, Tuple{IO, MIME"text/plain", AbstractDict}, io, m, c)

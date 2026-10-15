@@ -34,6 +34,7 @@ Unlike LRU, Clock does not track the exact order of hits.
 A recently inserted entry that has never been hit again can be evicted before an older entry that has been reused.
 
 Choose Clock for approximate recency with little bookkeeping on hits: a hit updates a bit rather than a recency list.
+A shared `ClockCache` is read without a lock, so hits from many threads do not wait on each other.
 Eviction may scan several slots to find a victim.
 
 ## LRU: exact recency
@@ -59,7 +60,7 @@ sort!(collect(keys(cache))) # B was evicted
 Unlike Clock, LRU always retains the exact recency order, even after several hits between evictions.
 
 Choose LRU when that ordering suits the workload.
-Maintaining the order requires more bookkeeping on hits, but choosing the next victim does not require a scan.
+Maintaining the order requires more bookkeeping on hits, under a lock, but choosing the next victim does not require a scan.
 Neither policy guarantees a better hit rate for every workload; use the [dashboard](dashboard.md) or [timing](timing.md) to evaluate yours.
 
 ## Selecting a policy
@@ -83,5 +84,5 @@ Custom eviction policies can be supplied through the [cache interface](interface
 Both policies evict as many entries as needed to fit a new value or a reduced limit.
 A value larger than the entire limit is returned without being stored.
 Byte limits measure cached values, not keys or container overhead.
-Shared caches use locks under either policy; computations run outside those locks.
+Shared caches take a lock to insert and evict entries, and `LRU` also on hits; computations run outside those locks.
 Disk caches have no eviction policy; see [Disk caching](disk.md) for cleanup.
