@@ -9,7 +9,7 @@ on:
       - 'docs/**'
       - 'research/**'
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, closed]
   workflow_dispatch:
 
 concurrency:
@@ -25,7 +25,12 @@ jobs:
       fail-fast: false
       matrix:
         version: ["min", "1"]
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # macOS and Windows only run on pushes to the default branch and manual runs...
+        os: ${{ fromJSON((github.event_name == 'workflow_dispatch' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) && '["ubuntu-latest", "macos-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
+        # ...and only with the latest Julia version
+        exclude:
+          - {version: 'min', os: macos-latest}
+          - {version: 'min', os: windows-latest}
     uses: "QuantumKitHub/QuantumKitHubActions/.github/workflows/Tests.yml@main"
     with:
       julia-version: "${{ matrix.version }}"
