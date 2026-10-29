@@ -41,11 +41,12 @@ jobs:
     secrets:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
-  # Single aggregate check for branch protection.
+  # Single aggregate check for branch protection, not reported for runs triggered by closing a PR
+  # (these only exist to cancel in-progress runs, and skip all tests).
   ci-success:
     name: "ci-success"
     needs: tests
-    if: always()
+    if: always() && github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
       - name: "Check that all test jobs succeeded"
