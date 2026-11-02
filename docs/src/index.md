@@ -60,11 +60,14 @@ Anonymous functions are not supported.
 Methods without `@cached` keep their usual behavior.
 
 A return annotation is optional and may depend on `where` parameters.
+As usual in Julia, the result is converted to the annotated type, before it is cached.
 Without one, MemoizationKit uses the inferred return type, falling back to `Any` if it is not concrete.
+Type arguments keep their own type in this inference, so a body that depends on them stays inferred.
 A type-stable body keeps calls inferred even though the shared cache holds results of different types.
 
 Use [`uncached`](@ref) to call the body without reading or filling RAM or disk caches.
 Supply all arguments, including defaults: defaults belong to the wrapper, not the uncached body.
+Likewise, the return type annotation belongs to the wrapper, so `uncached` returns the value of the body as is.
 
 ```@example powers
 uncached(powers, 2, 3; offset = 1)

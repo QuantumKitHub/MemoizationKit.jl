@@ -140,14 +140,14 @@ end
 
 function MemoizationKit.disk_lookup(f::F, ::DiskCache{S}, ::Type{V}, key, args, kw, o) where {F, S, V}
     s = stores(f)
-    s.artifact === nothing && s.node === nothing && return _compute(f, o, args, kw)
+    s.artifact === nothing && s.node === nothing && return _compute(f, o, V, args, kw)
     return instrument(f, Val(:disk), () -> lookup(f, s, S, V, key, args, kw, o), o)
 end
 
 function lookup(f::F, s::Stores, ::Type{S}, ::Type{V}, key, args, kw, o) where {F, S, V}
     # callable objects with fields share the store of their type, so they are part of the key
     kb = attempt(() -> tobytes(S, Base.issingletontype(F) ? key : (f, key)), "serialize a key of `$(_fname(f))`")
-    kb === nothing && (Threads.atomic_add!(s.misses, 1); return _compute(f, o, args, kw))
+    kb === nothing && (Threads.atomic_add!(s.misses, 1); return _compute(f, o, V, args, kw))
     h = sha256(kb)
     for store in (s.artifact, s.node)
         store === nothing && continue
@@ -158,7 +158,7 @@ function lookup(f::F, s::Stores, ::Type{S}, ::Type{V}, key, args, kw, o) where {
         v !== nothing && something(v) isa V && (Threads.atomic_add!(s.hits, 1); return something(v)::V)
     end
     Threads.atomic_add!(s.misses, 1)
-    v = _compute(f, o, args, kw)
+    v = _compute(f, o, V, args, kw)
     node = s.node
     node === nothing || attempt("write `$(_fname(f))` to the disk cache at $(node.db.file)") do
         vb = tobytes(S, v)

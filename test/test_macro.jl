@@ -26,6 +26,10 @@ end
 
 @cached unstable(x) = counting(x > 0 ? x : "negative")
 
+# value types inferred from type arguments, which `typeof` would widen to `DataType`
+@cached typearg(::Type{T}, n::Int) where {T} = counting(Vector{T}(undef, n))
+@cached typevararg(Ts::Type...) = counting(map(T -> Vector{T}(), Ts))
+
 struct Adder
     a::Int
 end
@@ -155,6 +159,7 @@ end
 
 @testset "return types" begin
     @test converted(1) === 1.0
+    @test uncached(converted, 2) === 2 # the annotation applies to cached calls
     @test dependent(1) == [1] && dependent(1) isa Vector{Int}
     @test dependent(1.5) isa Vector{Float64}
     # one untyped cache per function; the value type is recovered at the call
@@ -166,6 +171,8 @@ end
     @test rettype(basic, Tuple{Int}) == Int
     @test unstable(1) === 1 && unstable(-1) == "negative"
     @test rettype(unstable, Tuple{Int}) == Any
+    @test rettype(typearg, Tuple{Type{Float64}, Int}) == Vector{Float64}
+    @test rettype(typevararg, Tuple{Type{Int}, Type{Float64}}) == Tuple{Vector{Int}, Vector{Float64}}
     @test length(only(caches(unstable))) == 2
 end
 
@@ -174,6 +181,8 @@ end
     @test @inferred(full(1, 2, :a; k = 2)) == 5
     @test @inferred(dependent(2)) == [2]
     @test @inferred(Adder(1)(1)) == 2
+    @test @inferred(typearg(Float64, 2)) isa Vector{Float64}
+    @test @inferred(typevararg(Int, Float64)) == (Int[], Float64[])
     basic(6)
     @test (@allocated basic(6)) == 0
 end
