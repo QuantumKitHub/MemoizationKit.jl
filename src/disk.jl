@@ -66,7 +66,7 @@ enable_disk_caches!() = (DISK_ENABLED[] = true; nothing)
 # Called on a miss of the RAM cache (or on every call, with `NoCache` in RAM).
 function _diskcall(f::F, disk::DiskCache, ::Type{V}, key, args, kw) where {F, V}
     o = _ownerval(F)
-    (DISK_ENABLED[] && ccall(:jl_generating_output, Cint, ()) == 0) || return _compute(f, o, args, kw)
+    (DISK_ENABLED[] && ccall(:jl_generating_output, Cint, ()) == 0) || return _compute(f, o, V, args, kw)
     return disk_lookup(f, disk, V, key, args, kw, o)
 end
 

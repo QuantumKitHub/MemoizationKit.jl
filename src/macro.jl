@@ -43,9 +43,15 @@ macro cached(ex)
     impl[:args] = [selfarg; map(_nodefault, args)]
     isempty(kwargs) || (impl[:kwargs] = map(_nodefault, kwargs))
 
-    vt = get(def, :rtype, nothing)
+    vt = get(def, :rtype, :($InferValue{Tuple{$(map(_argtype, args)...)}}()))
     positional = Expr(:tuple, map(_forward, args)...)
     keywords = Expr(:tuple, Expr(:parameters, map(_forward, kwargs)...))
+
+    # The return type annotation is evaluated only in the wrapper, and applied by `call` to the
+    # computed value: in the body, where both depend on the arguments, JET would report the pairs
+    # of value and annotated type that inference cannot rule out.
+    delete!(impl, :rtype)
+    delete!(def, :rtype)
     style = :($CacheStyle($fself, $(positional.args...)))
     def[:body] = :($call($fself, $style, $vt, $positional, $keywords))
 
@@ -72,3 +78,4 @@ _nameargs(a) = Meta.isexpr(a, :(::)) && length(a.args) == 1 ? Expr(:(::), gensym
 
 _nodefault(a) = Meta.isexpr(a, :kw) ? a.args[1] : a
 _forward(a) = Meta.isexpr(a, :(...)) ? Expr(:(...), _argname(a)) : _argname(a)
+_argtype(a) = Meta.isexpr(a, :(...)) ? :(map($Core.Typeof, $(_argname(a)))...) : :($Core.Typeof($(_argname(a))))
