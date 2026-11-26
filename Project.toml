@@ -15,16 +15,19 @@ Scratch = "6c6a2e73-6563-6170-7368-637461726353"
 Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 
 [weakdeps]
+Enzyme = "7da242da-08ed-463a-9acd-ee780be4f1d9"
 SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
 Tachikoma = "468859d6-42d8-48b7-8ad9-1d312e0e3b0a"
 TimerOutputs = "a759f4b9-e2f1-59dc-863e-4aeb61b1ea8f"
 
 [extensions]
+MemoizationKitEnzymeExt = "Enzyme"
 MemoizationKitSQLiteExt = "SQLite"
 MemoizationKitTachikomaExt = "Tachikoma"
 MemoizationKitTimerOutputsExt = "TimerOutputs"
 
 [compat]
+Enzyme = "0.13.216"
 ExprTools = "0.1"
 PrecompileTools = "1"
 Preferences = "1.4"
